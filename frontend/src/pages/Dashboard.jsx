@@ -1,0 +1,719 @@
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { getUserEnrollments } from '../api/coursesAPI';
+import { getCurrentUser } from '../api/authAPI';
+
+function Dashboard() {
+  const [activeTab, setActiveTab] = useState('overview');
+  const [enrollments, setEnrollments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const user = getCurrentUser();
+
+  // Mock user data - will come from API
+  const userData = {
+    firstName: user?.firstName || 'Alex',
+    lastName: user?.lastName || 'Johnson',
+    email: user?.email || 'alex@example.com',
+    joinDate: 'January 2025',
+    streak: user?.streakDays || 12,
+    totalHours: 47,
+    coursesCompleted: 2,
+    badges: ['🔥 7-Day Streak', '🏆 Quiz Master', '📚 First Course', '🎯 10 Lessons'],
+    totalPoints: 2840,
+    rank: 'Gold Learner'
+  };
+
+  useEffect(() => {
+    fetchEnrollments();
+  }, []);
+
+  const fetchEnrollments = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      
+      // Check if user is logged in
+      const currentUser = getCurrentUser();
+      if (!currentUser) {
+        setError('Please log in to view your dashboard');
+        setLoading(false);
+        return;
+      }
+
+      // Try to fetch enrollments
+      const response = await getUserEnrollments(currentUser.id);
+      setEnrollments(response.data || []);
+      
+      if (response.data.length === 0) {
+        // No enrollments found, show empty state
+        setEnrollments([]);
+      }
+      
+    } catch (err) {
+      console.error('Failed to fetch enrollments:', err);
+      // Show error but keep page usable
+      setError('Could not load your enrollments. Please try refreshing.');
+      setEnrollments([]); // Set empty to show the empty state
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const enrolledCourses = enrollments.length > 0 ? enrollments.map(enrollment => ({
+    id: enrollment.courseId,
+    title: enrollment.title || 'Course',
+    progress: enrollment.progressPercentage || 0,
+    lessons: 25,
+    completed: Math.round((enrollment.progressPercentage || 0) / 100 * 25),
+    image: enrollment.imageUrl || '📚',
+    nextLesson: 'Continue Learning',
+    dueDate: 'Ongoing'
+  })) : [];
+
+  const upcomingSessions = [
+    { id: 1, title: 'React Study Group', time: 'Today, 5:00 PM', group: 'React Advanced Patterns' },
+    { id: 2, title: 'JavaScript Code Review', time: 'Tomorrow, 3:00 PM', group: 'JavaScript Mastery Squad' },
+    { id: 3, title: 'Data Science Session', time: 'Wed, 7:00 PM', group: 'Data Science Study Squad' },
+  ];
+
+  const recentActivity = [
+    { 
+      id: 1, 
+      type: 'quiz', 
+      action: 'Completed quiz', 
+      course: 'React Advanced Patterns', 
+      score: '94%', 
+      time: '2 hours ago',
+      icon: '📝'
+    },
+    { 
+      id: 2, 
+      type: 'lesson', 
+      action: 'Finished lesson', 
+      course: 'JavaScript Mastery', 
+      lesson: 'Closures', 
+      time: '5 hours ago',
+      icon: '✅'
+    },
+  ];
+
+  const getProgressColor = (progress) => {
+    if (progress >= 70) return '#34d399';
+    if (progress >= 40) return '#fbbf24';
+    return '#f87171';
+  };
+
+  if (loading) {
+    return (
+      <div style={{ textAlign: 'center', padding: '4rem' }}>
+        <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>📊</div>
+        <p>Loading your dashboard...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="dashboard-page" style={{ 
+      maxWidth: '1400px', 
+      margin: '2rem auto', 
+      padding: '0 clamp(1rem, 3vw, 2rem)',
+      color: '#1a1a2e',
+      width: '100%'
+    }}>
+      {/* Welcome Section - Responsive */}
+      <div className="dashboard-grid" style={{ 
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))',
+        gap: 'clamp(1rem, 2vw, 1.5rem)',
+        marginBottom: '2rem'
+      }}>
+        <div className="welcome-card" style={{
+          padding: 'clamp(1rem, 2vw, 2rem)',
+          background: '#fafafa',
+          borderRadius: '12px',
+          border: '1px solid #e5e7eb'
+        }}>
+          <div className="welcome-section" style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: 'clamp(0.75rem, 1.5vw, 1rem)', 
+            marginBottom: '0.5rem',
+            flexWrap: 'wrap'
+          }}>
+            <div style={{
+              width: 'clamp(44px, 6vw, 56px)',
+              height: 'clamp(44px, 6vw, 56px)',
+              borderRadius: '50%',
+              background: '#6c5ce7',
+              color: 'white',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 'clamp(1.2rem, 2vw, 1.5rem)',
+              fontWeight: 'bold',
+              flexShrink: 0
+            }}>
+              {userData.firstName[0]}{userData.lastName[0]}
+            </div>
+            <div>
+              <h2 style={{ 
+                fontSize: 'clamp(1.2rem, 2.5vw, 1.5rem)', 
+                color: '#1a1a2e', 
+                margin: 0 
+              }}>
+                Welcome back, {userData.firstName}! 👋
+              </h2>
+              <p style={{ 
+                color: '#6b7280', 
+                margin: 0,
+                fontSize: 'clamp(0.85rem, 1vw, 0.95rem)'
+              }}>
+                {userData.rank} • {userData.totalPoints} points
+              </p>
+            </div>
+          </div>
+          
+          <div className="user-stats" style={{ 
+            display: 'flex', 
+            gap: 'clamp(1rem, 2vw, 2rem)', 
+            marginTop: '1rem',
+            flexWrap: 'wrap'
+          }}>
+            <div>
+              <div style={{ fontSize: 'clamp(0.75rem, 0.8vw, 0.85rem)', color: '#6b7280' }}>Member since</div>
+              <div style={{ fontWeight: '600', fontSize: 'clamp(0.85rem, 1vw, 0.95rem)' }}>{userData.joinDate}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 'clamp(0.75rem, 0.8vw, 0.85rem)', color: '#6b7280' }}>Learning streak</div>
+              <div style={{ fontWeight: '600', fontSize: 'clamp(0.85rem, 1vw, 0.95rem)' }}>🔥 {userData.streak} days</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 'clamp(0.75rem, 0.8vw, 0.85rem)', color: '#6b7280' }}>Total hours</div>
+              <div style={{ fontWeight: '600', fontSize: 'clamp(0.85rem, 1vw, 0.95rem)' }}>⏱️ {userData.totalHours}h</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 'clamp(0.75rem, 0.8vw, 0.85rem)', color: '#6b7280' }}>Courses completed</div>
+              <div style={{ fontWeight: '600', fontSize: 'clamp(0.85rem, 1vw, 0.95rem)' }}>🎓 {userData.coursesCompleted}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="stats-grid" style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 120px), 1fr))',
+          gap: 'clamp(0.75rem, 1.5vw, 1rem)'
+        }}>
+          <div className="stat-card" style={{
+            padding: 'clamp(1rem, 1.5vw, 1.5rem)',
+            background: '#fafafa',
+            borderRadius: '12px',
+            border: '1px solid #e5e7eb',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: 'clamp(1.5rem, 2.5vw, 2rem)' }}>📊</div>
+            <div style={{ 
+              fontSize: 'clamp(1.2rem, 2vw, 1.5rem)', 
+              fontWeight: 'bold', 
+              color: '#1a1a2e' 
+            }}>
+              {enrolledCourses.length}
+            </div>
+            <div style={{ fontSize: 'clamp(0.75rem, 0.8vw, 0.85rem)', color: '#6b7280' }}>Active Courses</div>
+          </div>
+          <div className="stat-card" style={{
+            padding: 'clamp(1rem, 1.5vw, 1.5rem)',
+            background: '#fafafa',
+            borderRadius: '12px',
+            border: '1px solid #e5e7eb',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: 'clamp(1.5rem, 2.5vw, 2rem)' }}>🏆</div>
+            <div style={{ 
+              fontSize: 'clamp(1.2rem, 2vw, 1.5rem)', 
+              fontWeight: 'bold', 
+              color: '#1a1a2e' 
+            }}>
+              {userData.badges.length}
+            </div>
+            <div style={{ fontSize: 'clamp(0.75rem, 0.8vw, 0.85rem)', color: '#6b7280' }}>Badges Earned</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs - Responsive */}
+      <div className="tabs-container" style={{
+        display: 'flex',
+        gap: 'clamp(0.5rem, 1vw, 1rem)',
+        borderBottom: '1px solid #e5e7eb',
+        marginBottom: '2rem',
+        overflowX: 'auto',
+        flexWrap: 'nowrap',
+        WebkitOverflowScrolling: 'touch'
+      }}>
+        {['overview', 'courses', 'activity', 'achievements'].map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className="tab-button"
+            style={{
+              padding: 'clamp(0.5rem, 1vw, 0.75rem) clamp(1rem, 1.5vw, 1.5rem)',
+              background: 'none',
+              border: 'none',
+              borderBottom: activeTab === tab ? '2px solid #6c5ce7' : '2px solid transparent',
+              color: activeTab === tab ? '#6c5ce7' : '#6b7280',
+              cursor: 'pointer',
+              fontSize: 'clamp(0.8rem, 1vw, 0.95rem)',
+              fontWeight: activeTab === tab ? '600' : '400',
+              transition: 'all 0.3s',
+              whiteSpace: 'nowrap',
+              flexShrink: 0
+            }}
+          >
+            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab Content - Overview - Responsive */}
+      {activeTab === 'overview' && (
+        <div className="dashboard-content" style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 380px), 1fr))',
+          gap: 'clamp(1rem, 2vw, 2rem)'
+        }}>
+          <div>
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              marginBottom: '1.5rem',
+              flexWrap: 'wrap',
+              gap: '0.5rem'
+            }}>
+              <h3 style={{ 
+                fontSize: 'clamp(1.1rem, 1.5vw, 1.2rem)', 
+                color: '#1a1a2e' 
+              }}>
+                Your Courses
+              </h3>
+              <Link to="/courses" style={{ color: '#6c5ce7', fontSize: 'clamp(0.85rem, 1vw, 0.9rem)' }}>
+                View All →
+              </Link>
+            </div>
+            
+            {error && (
+              <div style={{
+                padding: '0.75rem',
+                background: '#fef2f2',
+                color: '#ef4444',
+                borderRadius: '8px',
+                marginBottom: '1rem',
+                fontSize: 'clamp(0.85rem, 1vw, 0.9rem)'
+              }}>
+                {error}
+              </div>
+            )}
+            
+            {enrolledCourses.length === 0 ? (
+              <div style={{
+                padding: 'clamp(1.5rem, 2vw, 2rem)',
+                textAlign: 'center',
+                background: '#fafafa',
+                borderRadius: '12px',
+                border: '1px solid #e5e7eb'
+              }}>
+                <div style={{ fontSize: 'clamp(2.5rem, 4vw, 3rem)', marginBottom: '0.5rem' }}>📖</div>
+                <p style={{ color: '#6b7280' }}>You haven't enrolled in any courses yet.</p>
+                <Link to="/courses">
+                  <button style={{
+                    marginTop: '1rem',
+                    padding: '0.5rem 2rem',
+                    background: '#6c5ce7',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}>
+                    Browse Courses
+                  </button>
+                </Link>
+              </div>
+            ) : (
+              enrolledCourses.map(course => (
+                <div key={course.id} className="course-item" style={{
+                  padding: 'clamp(1rem, 1.5vw, 1.5rem)',
+                  background: '#fafafa',
+                  borderRadius: '12px',
+                  border: '1px solid #e5e7eb',
+                  marginBottom: '1rem'
+                }}>
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: 'clamp(0.75rem, 1.5vw, 1rem)', 
+                    flexWrap: 'wrap' 
+                  }}>
+                    <div style={{ fontSize: 'clamp(1.5rem, 2.5vw, 2rem)', flexShrink: 0 }}>
+                      {course.image}
+                    </div>
+                    <div className="course-info" style={{ flex: 1, minWidth: '150px' }}>
+                      <div style={{ 
+                        fontWeight: '600', 
+                        color: '#1a1a2e',
+                        fontSize: 'clamp(0.95rem, 1.2vw, 1.05rem)'
+                      }}>
+                        {course.title}
+                      </div>
+                      <div style={{ 
+                        fontSize: 'clamp(0.8rem, 0.9vw, 0.85rem)', 
+                        color: '#6b7280' 
+                      }}>
+                        {course.completed} / {course.lessons} lessons completed
+                      </div>
+                      <div className="course-progress" style={{ marginTop: '0.5rem' }}>
+                        <div style={{ 
+                          display: 'flex', 
+                          justifyContent: 'space-between',
+                          fontSize: 'clamp(0.75rem, 0.8vw, 0.8rem)',
+                          color: '#6b7280',
+                          marginBottom: '0.25rem'
+                        }}>
+                          <span>Progress</span>
+                          <span>{course.progress}%</span>
+                        </div>
+                        <div style={{ 
+                          background: '#e5e7eb', 
+                          borderRadius: '4px', 
+                          height: '6px'
+                        }}>
+                          <div style={{ 
+                            background: getProgressColor(course.progress), 
+                            height: '100%', 
+                            borderRadius: '4px',
+                            width: `${course.progress}%`,
+                            transition: 'width 0.5s ease'
+                          }} />
+                        </div>
+                      </div>
+                      <div style={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between',
+                        marginTop: '0.5rem',
+                        fontSize: 'clamp(0.8rem, 0.9vw, 0.85rem)',
+                        flexWrap: 'wrap',
+                        gap: '0.5rem'
+                      }}>
+                        <span style={{ color: '#6b7280' }}>
+                          Next: {course.nextLesson}
+                        </span>
+                        <span style={{ color: '#6c5ce7' }}>
+                          Due: {course.dueDate}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div>
+            <div style={{
+              padding: 'clamp(1rem, 1.5vw, 1.5rem)',
+              background: '#fafafa',
+              borderRadius: '12px',
+              border: '1px solid #e5e7eb',
+              marginBottom: '1.5rem'
+            }}>
+              <h3 style={{ 
+                fontSize: 'clamp(1rem, 1.2vw, 1.1rem)', 
+                color: '#1a1a2e', 
+                marginBottom: '1rem' 
+              }}>
+                📅 Upcoming Sessions
+              </h3>
+              {upcomingSessions.map(session => (
+                <div key={session.id} style={{
+                  padding: '0.75rem 0',
+                  borderBottom: '1px solid #e5e7eb',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '0.5rem'
+                }}>
+                  <div>
+                    <div style={{ 
+                      fontSize: 'clamp(0.85rem, 1vw, 0.9rem)', 
+                      color: '#1a1a2e' 
+                    }}>
+                      {session.title}
+                    </div>
+                    <div style={{ 
+                      fontSize: 'clamp(0.75rem, 0.8vw, 0.8rem)', 
+                      color: '#6b7280' 
+                    }}>
+                      {session.group}
+                    </div>
+                  </div>
+                  <div style={{ 
+                    fontSize: 'clamp(0.75rem, 0.8vw, 0.8rem)', 
+                    color: '#6c5ce7', 
+                    fontWeight: '500' 
+                  }}>
+                    {session.time}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{
+              padding: 'clamp(1rem, 1.5vw, 1.5rem)',
+              background: '#fafafa',
+              borderRadius: '12px',
+              border: '1px solid #e5e7eb'
+            }}>
+              <h3 style={{ 
+                fontSize: 'clamp(1rem, 1.2vw, 1.1rem)', 
+                color: '#1a1a2e', 
+                marginBottom: '1rem' 
+              }}>
+                📝 Recent Activity
+              </h3>
+              {recentActivity.map(activity => (
+                <div key={activity.id} style={{
+                  padding: '0.75rem 0',
+                  borderBottom: '1px solid #e5e7eb',
+                  display: 'flex',
+                  gap: '0.75rem',
+                  alignItems: 'flex-start',
+                  flexWrap: 'wrap'
+                }}>
+                  <span style={{ fontSize: 'clamp(1rem, 1.2vw, 1.2rem)', flexShrink: 0 }}>
+                    {activity.icon}
+                  </span>
+                  <div style={{ flex: 1, minWidth: '100px' }}>
+                    <div style={{ 
+                      fontSize: 'clamp(0.85rem, 1vw, 0.9rem)', 
+                      color: '#1a1a2e' 
+                    }}>
+                      {activity.action}
+                      {activity.score && <span style={{ color: '#6c5ce7' }}> ({activity.score})</span>}
+                    </div>
+                    <div style={{ 
+                      fontSize: 'clamp(0.75rem, 0.8vw, 0.8rem)', 
+                      color: '#6b7280' 
+                    }}>
+                      {activity.course || activity.badge || activity.group}
+                    </div>
+                  </div>
+                  <div style={{ 
+                    fontSize: 'clamp(0.65rem, 0.7vw, 0.7rem)', 
+                    color: '#9ca3af', 
+                    whiteSpace: 'nowrap' 
+                  }}>
+                    {activity.time}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tab Content - Courses - Responsive */}
+      {activeTab === 'courses' && (
+        <div className="courses-grid" style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 250px), 1fr))',
+          gap: 'clamp(1rem, 1.5vw, 1.5rem)'
+        }}>
+          {enrolledCourses.length === 0 ? (
+            <div style={{
+              padding: 'clamp(1.5rem, 2vw, 2rem)',
+              textAlign: 'center',
+              background: '#fafafa',
+              borderRadius: '12px',
+              border: '1px solid #e5e7eb',
+              gridColumn: '1 / -1'
+            }}>
+              <div style={{ fontSize: 'clamp(2.5rem, 4vw, 3rem)', marginBottom: '0.5rem' }}>📖</div>
+              <p style={{ color: '#6b7280' }}>You haven't enrolled in any courses yet.</p>
+              <Link to="/courses">
+                <button style={{
+                  marginTop: '1rem',
+                  padding: '0.5rem 2rem',
+                  background: '#6c5ce7',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}>
+                  Browse Courses
+                </button>
+              </Link>
+            </div>
+          ) : (
+            enrolledCourses.map(course => (
+              <div key={course.id} style={{
+                padding: 'clamp(1rem, 1.5vw, 1.5rem)',
+                background: '#fafafa',
+                borderRadius: '12px',
+                border: '1px solid #e5e7eb'
+              }}>
+                <div style={{ fontSize: 'clamp(2rem, 3vw, 3rem)' }}>{course.image}</div>
+                <h3 style={{ 
+                  color: '#1a1a2e', 
+                  marginTop: '0.5rem', 
+                  fontSize: 'clamp(0.95rem, 1.2vw, 1.1rem)',
+                  wordBreak: 'break-word'
+                }}>
+                  {course.title}
+                </h3>
+                <div style={{ 
+                  color: '#6b7280', 
+                  fontSize: 'clamp(0.8rem, 0.9vw, 0.85rem)' 
+                }}>
+                  {course.completed}/{course.lessons} lessons
+                </div>
+                <div style={{ marginTop: '0.5rem' }}>
+                  <div style={{ 
+                    background: '#e5e7eb', 
+                    borderRadius: '4px', 
+                    height: '6px'
+                  }}>
+                    <div style={{ 
+                      background: getProgressColor(course.progress), 
+                      height: '100%', 
+                      borderRadius: '4px',
+                      width: `${course.progress}%`
+                    }} />
+                  </div>
+                </div>
+                <Link to={`/courses/${course.id}`}>
+                  <button style={{
+                    marginTop: '1rem',
+                    padding: '0.5rem 1.5rem',
+                    background: '#6c5ce7',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    width: '100%',
+                    fontSize: 'clamp(0.85rem, 1vw, 0.95rem)'
+                  }}>
+                    Continue Learning
+                  </button>
+                </Link>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* Tab Content - Activity */}
+      {activeTab === 'activity' && (
+        <div>
+          <h3 style={{ 
+            marginBottom: '1.5rem', 
+            color: '#1a1a2e',
+            fontSize: 'clamp(1.1rem, 1.5vw, 1.2rem)'
+          }}>
+            All Activity
+          </h3>
+          <div style={{
+            padding: 'clamp(1rem, 1.5vw, 1.5rem)',
+            background: '#fafafa',
+            borderRadius: '12px',
+            border: '1px solid #e5e7eb'
+          }}>
+            {recentActivity.map(activity => (
+              <div key={activity.id} style={{
+                padding: '1rem 0',
+                borderBottom: '1px solid #e5e7eb',
+                display: 'flex',
+                gap: '1rem',
+                alignItems: 'center',
+                flexWrap: 'wrap'
+              }}>
+                <span style={{ fontSize: 'clamp(1.2rem, 1.5vw, 1.5rem)', flexShrink: 0 }}>
+                  {activity.icon}
+                </span>
+                <div style={{ flex: 1, minWidth: '120px' }}>
+                  <div style={{ 
+                    fontSize: 'clamp(0.9rem, 1vw, 0.95rem)', 
+                    color: '#1a1a2e' 
+                  }}>
+                    {activity.action}
+                    {activity.score && <span style={{ color: '#6c5ce7' }}> ({activity.score})</span>}
+                  </div>
+                  <div style={{ 
+                    fontSize: 'clamp(0.8rem, 0.9vw, 0.85rem)', 
+                    color: '#6b7280' 
+                  }}>
+                    {activity.course || activity.badge || activity.group}
+                  </div>
+                </div>
+                <div style={{ 
+                  fontSize: 'clamp(0.7rem, 0.8vw, 0.8rem)', 
+                  color: '#9ca3af' 
+                }}>
+                  {activity.time}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Tab Content - Achievements - Responsive */}
+      {activeTab === 'achievements' && (
+        <div>
+          <h3 style={{ 
+            marginBottom: '1.5rem', 
+            color: '#1a1a2e',
+            fontSize: 'clamp(1.1rem, 1.5vw, 1.2rem)'
+          }}>
+            Your Achievements
+          </h3>
+          <div className="achievements-grid" style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 150px), 1fr))',
+            gap: 'clamp(1rem, 1.5vw, 1.5rem)'
+          }}>
+            {userData.badges.map((badge, index) => (
+              <div key={index} style={{
+                padding: 'clamp(1rem, 1.5vw, 1.5rem)',
+                textAlign: 'center',
+                background: '#fafafa',
+                borderRadius: '12px',
+                border: '1px solid #e5e7eb',
+                transition: 'transform 0.2s'
+              }}>
+                <div style={{ fontSize: 'clamp(2rem, 3vw, 3rem)' }}>{badge.split(' ')[0]}</div>
+                <div style={{ 
+                  fontWeight: '600', 
+                  color: '#1a1a2e',
+                  marginTop: '0.5rem',
+                  fontSize: 'clamp(0.8rem, 0.9vw, 0.9rem)',
+                  wordBreak: 'break-word'
+                }}>
+                  {badge}
+                </div>
+                <div style={{ 
+                  fontSize: 'clamp(0.7rem, 0.8vw, 0.8rem)', 
+                  color: '#6b7280' 
+                }}>
+                  Earned {index + 1} month ago
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default Dashboard;
