@@ -29,12 +29,56 @@ class User {
   }
 
   static async updateStreak(userId) {
+    // Check if user was active today
+    const user = await this.findById(userId);
+    if (!user) return;
+    
+    const lastActive = user.lastActiveAt ? new Date(user.lastActiveAt) : null;
+    const today = new Date();
+    const todayStr = today.toDateString();
+    
+    if (lastActive) {
+      const lastActiveStr = new Date(lastActive).toDateString();
+      
+      // If already active today, don't update streak
+      if (lastActiveStr === todayStr) {
+        return;
+      }
+      
+      // If last active was yesterday, increment streak
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toDateString();
+      
+      if (lastActiveStr === yesterdayStr) {
+        await db.runAsync(
+          'UPDATE users SET streakDays = streakDays + 1, lastActiveAt = CURRENT_TIMESTAMP WHERE id = ?',
+          [userId]
+        );
+      } else {
+        // Reset streak if more than 1 day gap
+        await db.runAsync(
+          'UPDATE users SET streakDays = 1, lastActiveAt = CURRENT_TIMESTAMP WHERE id = ?',
+          [userId]
+        );
+      }
+    } else {
+      // First time logging in
+      await db.runAsync(
+        'UPDATE users SET streakDays = 1, lastActiveAt = CURRENT_TIMESTAMP WHERE id = ?',
+        [userId]
+      );
+    }
+    
+    // Check for achievements after streak update
+    const Achievement = require('./Achievement');
+    await Achievement.checkAndAwardAchievements(userId);
+  }
+
+  static async updateLearningHours(userId, hours) {
     await db.runAsync(
-      `UPDATE users 
-       SET streakDays = streakDays + 1, 
-           lastActiveAt = CURRENT_TIMESTAMP 
-       WHERE id = ?`,
-      [userId]
+      'UPDATE users SET totalLearningHours = totalLearningHours + ? WHERE id = ?',
+      [hours, userId]
     );
   }
 
@@ -45,13 +89,6 @@ class User {
        SET firstName = ?, lastName = ?, bio = ?, avatarUrl = ?, updatedAt = CURRENT_TIMESTAMP
        WHERE id = ?`,
       [firstName, lastName, bio || '', avatarUrl || '', userId]
-    );
-  }
-
-  static async updateLearningHours(userId, hours) {
-    await db.runAsync(
-      'UPDATE users SET totalLearningHours = totalLearningHours + ? WHERE id = ?',
-      [hours, userId]
     );
   }
 

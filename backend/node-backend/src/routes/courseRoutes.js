@@ -3,7 +3,6 @@ const router = express.Router();
 const courseController = require('../controllers/courseController');
 const { authenticate } = require('../middleware/auth');
 
-// Make sure all routes have proper callback functions
 router.get('/', courseController.getAllCourses);
 router.get('/:id', authenticate, courseController.getCourseById);
 router.post('/:courseId/enroll', authenticate, courseController.enrollInCourse);

@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const Achievement = require('../models/Achievement');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
@@ -14,7 +15,6 @@ exports.register = async (req, res) => {
       return res.status(400).json({ error: 'All fields are required' });
     }
 
-    // Check if user exists
     const existingUser = await User.findByEmail(email);
     if (existingUser) {
       return res.status(400).json({ error: 'Email already exists' });
@@ -67,11 +67,12 @@ exports.login = async (req, res) => {
     }
 
     // Update streak
-    try {
-      await User.updateStreak(user.id);
-    } catch (streakError) {
-      console.log('⚠️ Streak update warning:', streakError.message);
-    }
+    await User.updateStreak(user.id);
+    
+    const updatedUser = await User.findById(user.id);
+    
+    // Get achievements
+    const achievements = await Achievement.getUserBadges(user.id);
     
     const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
     
@@ -81,12 +82,14 @@ exports.login = async (req, res) => {
       message: 'Login successful',
       token,
       user: {
-        id: user.id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        streakDays: user.streakDays || 0,
-        avatarUrl: user.avatarUrl || null
+        id: updatedUser.id,
+        firstName: updatedUser.firstName,
+        lastName: updatedUser.lastName,
+        email: updatedUser.email,
+        streakDays: updatedUser.streakDays || 0,
+        avatarUrl: updatedUser.avatarUrl || null,
+        achievements: achievements,
+        totalLearningHours: updatedUser.totalLearningHours || 0
       }
     });
   } catch (error) {
@@ -142,5 +145,25 @@ exports.updateProfile = async (req, res) => {
   } catch (error) {
     console.error('❌ Update profile error:', error);
     res.status(500).json({ error: 'Failed to update profile' });
+  }
+};
+
+exports.getAchievements = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const achievements = await Achievement.getUserBadges(userId);
+    res.json(achievements);
+  } catch (error) {
+    console.error('Error fetching achievements:', error);
+    res.status(500).json({ error: 'Failed to fetch achievements' });
+  }
+};
+
+exports.getAllUsers = async (req, res) => {
+  try {
+    const users = await User.getAll();
+    res.json(users);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get users' });
   }
 };
