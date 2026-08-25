@@ -2,6 +2,7 @@ const User = require('../models/User');
 const Achievement = require('../models/Achievement');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const db = require('../config/database');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
@@ -23,6 +24,10 @@ exports.register = async (req, res) => {
     const userId = await User.create({ firstName, lastName, email, password });
     const user = await User.findById(userId);
     
+    // Award welcome achievement
+    await Achievement.awardWelcomeAchievement(userId);
+    const achievements = await Achievement.getUserBadges(userId);
+    
     const token = jwt.sign({ id: userId, email }, JWT_SECRET, { expiresIn: '7d' });
     
     console.log('✅ User registered successfully:', email);
@@ -35,7 +40,8 @@ exports.register = async (req, res) => {
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
-        streakDays: user.streakDays || 0
+        streakDays: user.streakDays || 0,
+        achievements: achievements
       }
     });
   } catch (error) {
@@ -148,6 +154,60 @@ exports.updateProfile = async (req, res) => {
   }
 };
 
+exports.uploadAvatar = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { avatarData } = req.body;
+    
+    if (!avatarData) {
+      return res.status(400).json({ error: 'No avatar data provided' });
+    }
+
+    // Validate base64 image data
+    if (!avatarData.startsWith('data:image/')) {
+      return res.status(400).json({ error: 'Invalid image format' });
+    }
+
+    // Check size (max 2MB)
+    const sizeInBytes = Buffer.byteLength(avatarData, 'utf8');
+    if (sizeInBytes > 2 * 1024 * 1024) {
+      return res.status(400).json({ error: 'Image size must be less than 2MB' });
+    }
+
+    await User.updateAvatar(userId, avatarData);
+    const user = await User.findById(userId);
+    
+    console.log('✅ Avatar updated for user:', userId);
+    
+    res.json({ 
+      message: 'Avatar updated successfully',
+      avatarUrl: user.avatarUrl
+    });
+  } catch (error) {
+    console.error('❌ Error uploading avatar:', error);
+    res.status(500).json({ error: 'Failed to upload avatar: ' + error.message });
+  }
+};
+
+exports.removeAvatar = async (req, res) => {
+  try {
+    const userId = req.userId;
+    
+    await User.updateAvatar(userId, '');
+    const user = await User.findById(userId);
+    
+    console.log('✅ Avatar removed for user:', userId);
+    
+    res.json({ 
+      message: 'Avatar removed successfully',
+      avatarUrl: user.avatarUrl
+    });
+  } catch (error) {
+    console.error('❌ Error removing avatar:', error);
+    res.status(500).json({ error: 'Failed to remove avatar' });
+  }
+};
+
 exports.getAchievements = async (req, res) => {
   try {
     const userId = req.userId;
@@ -164,6 +224,59 @@ exports.getAllUsers = async (req, res) => {
     const users = await User.getAll();
     res.json(users);
   } catch (error) {
+    console.error('Error fetching users:', error);
     res.status(500).json({ error: 'Failed to get users' });
+  }
+};
+
+exports.debugUsers = async (req, res) => {
+  try {
+    const users = await db.allAsync('SELECT id, firstName, lastName, email, avatarUrl, bio, streakDays FROM users');
+    res.json(users);
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.deleteAccount = async (req, res) => {
+  try {
+    const userId = req.userId;
+    
+    console.log(`🗑️ Deleting account for user ${userId}`);
+    
+    // Start a transaction to delete all user data
+    await db.runAsync('BEGIN TRANSACTION');
+    
+    // Delete user's achievements
+    await db.runAsync('DELETE FROM user_achievements WHERE userId = ?', [userId]);
+    
+    // Delete study group memberships
+    await db.runAsync('DELETE FROM study_group_members WHERE userId = ?', [userId]);
+    
+    // Delete study group messages
+    await db.runAsync('DELETE FROM study_group_messages WHERE userId = ?', [userId]);
+    
+    // Delete lesson progress
+    await db.runAsync('DELETE FROM lesson_progress WHERE userId = ?', [userId]);
+    
+    // Delete quiz attempts
+    await db.runAsync('DELETE FROM quiz_attempts WHERE userId = ?', [userId]);
+    
+    // Delete enrollments
+    await db.runAsync('DELETE FROM enrollments WHERE userId = ?', [userId]);
+    
+    // Delete the user
+    await db.runAsync('DELETE FROM users WHERE id = ?', [userId]);
+    
+    await db.runAsync('COMMIT');
+    
+    console.log(`✅ Account deleted successfully for user ${userId}`);
+    
+    res.json({ success: true, message: 'Account deleted successfully' });
+  } catch (error) {
+    await db.runAsync('ROLLBACK');
+    console.error('❌ Error deleting account:', error);
+    res.status(500).json({ error: 'Failed to delete account: ' + error.message });
   }
 };
