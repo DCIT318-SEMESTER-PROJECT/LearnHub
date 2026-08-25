@@ -2,38 +2,31 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { getUserEnrollments } from '../api/coursesAPI';
 import { getCurrentUser } from '../api/authAPI';
+import api from '../api/axiosConfig';
 
 function Dashboard() {
   const [activeTab, setActiveTab] = useState('overview');
   const [enrollments, setEnrollments] = useState([]);
+  const [userData, setUserData] = useState(null);
+  const [achievements, setAchievements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const user = getCurrentUser();
-
-  // Mock user data - will come from API
-  const userData = {
-    firstName: user?.firstName || 'Alex',
-    lastName: user?.lastName || 'Johnson',
-    email: user?.email || 'alex@example.com',
-    joinDate: 'January 2025',
-    streak: user?.streakDays || 12,
-    totalHours: 47,
-    coursesCompleted: 2,
-    badges: ['🔥 7-Day Streak', '🏆 Quiz Master', '📚 First Course', '🎯 10 Lessons'],
-    totalPoints: 2840,
-    rank: 'Gold Learner'
-  };
+  const [stats, setStats] = useState({
+    totalEnrollments: 0,
+    completedCourses: 0,
+    totalLessons: 0,
+    completedLessons: 0
+  });
 
   useEffect(() => {
-    fetchEnrollments();
+    fetchDashboardData();
   }, []);
 
-  const fetchEnrollments = async () => {
+  const fetchDashboardData = async () => {
     try {
       setLoading(true);
       setError('');
       
-      // Check if user is logged in
       const currentUser = getCurrentUser();
       if (!currentUser) {
         setError('Please log in to view your dashboard');
@@ -41,26 +34,53 @@ function Dashboard() {
         return;
       }
 
-      // Try to fetch enrollments
-      const response = await getUserEnrollments(currentUser.id);
-      setEnrollments(response.data || []);
+      // Fetch user profile with achievements
+      const profileRes = await api.get('/auth/profile');
+      setUserData(profileRes.data);
       
-      if (response.data.length === 0) {
-        // No enrollments found, show empty state
-        setEnrollments([]);
+      // Fetch achievements
+      const achievementsRes = await api.get('/auth/achievements');
+      setAchievements(achievementsRes.data || []);
+      
+      // Fetch enrollments
+      const enrollmentsRes = await getUserEnrollments(currentUser.id);
+      setEnrollments(enrollmentsRes.data || []);
+      
+      // Calculate stats
+      const totalEnrollments = enrollmentsRes.data?.length || 0;
+      const completedCourses = enrollmentsRes.data?.filter(e => e.isCompleted).length || 0;
+      
+      // Get total lessons completed
+      let completedLessons = 0;
+      let totalLessons = 0;
+      
+      // Fetch each course to get lesson counts
+      for (const enrollment of (enrollmentsRes.data || [])) {
+        try {
+          const courseRes = await api.get(`/courses/${enrollment.courseId}`);
+          totalLessons += courseRes.data.lessons?.length || 0;
+          completedLessons += courseRes.data.lessons?.filter(l => l.isCompleted).length || 0;
+        } catch (err) {
+          console.warn('Could not fetch course details:', err);
+        }
       }
       
+      setStats({
+        totalEnrollments,
+        completedCourses,
+        totalLessons,
+        completedLessons
+      });
+      
     } catch (err) {
-      console.error('Failed to fetch enrollments:', err);
-      // Show error but keep page usable
-      setError('Could not load your enrollments. Please try refreshing.');
-      setEnrollments([]); // Set empty to show the empty state
+      console.error('Failed to fetch dashboard data:', err);
+      setError('Could not load your dashboard. Please try refreshing.');
     } finally {
       setLoading(false);
     }
   };
 
-  const enrolledCourses = enrollments.length > 0 ? enrollments.map(enrollment => ({
+  const enrolledCourses = enrollments.map(enrollment => ({
     id: enrollment.courseId,
     title: enrollment.title || 'Course',
     progress: enrollment.progressPercentage || 0,
@@ -69,34 +89,7 @@ function Dashboard() {
     image: enrollment.imageUrl || '📚',
     nextLesson: 'Continue Learning',
     dueDate: 'Ongoing'
-  })) : [];
-
-  const upcomingSessions = [
-    { id: 1, title: 'React Study Group', time: 'Today, 5:00 PM', group: 'React Advanced Patterns' },
-    { id: 2, title: 'JavaScript Code Review', time: 'Tomorrow, 3:00 PM', group: 'JavaScript Mastery Squad' },
-    { id: 3, title: 'Data Science Session', time: 'Wed, 7:00 PM', group: 'Data Science Study Squad' },
-  ];
-
-  const recentActivity = [
-    { 
-      id: 1, 
-      type: 'quiz', 
-      action: 'Completed quiz', 
-      course: 'React Advanced Patterns', 
-      score: '94%', 
-      time: '2 hours ago',
-      icon: '📝'
-    },
-    { 
-      id: 2, 
-      type: 'lesson', 
-      action: 'Finished lesson', 
-      course: 'JavaScript Mastery', 
-      lesson: 'Closures', 
-      time: '5 hours ago',
-      icon: '✅'
-    },
-  ];
+  }));
 
   const getProgressColor = (progress) => {
     if (progress >= 70) return '#34d399';
@@ -113,6 +106,10 @@ function Dashboard() {
     );
   }
 
+  const displayName = userData?.firstName || 'User';
+  const streakDays = userData?.streakDays || 0;
+  const totalHours = userData?.totalLearningHours || 0;
+
   return (
     <div className="dashboard-page" style={{ 
       maxWidth: '1400px', 
@@ -121,7 +118,7 @@ function Dashboard() {
       color: '#1a1a2e',
       width: '100%'
     }}>
-      {/* Welcome Section - Responsive */}
+      {/* Welcome Section */}
       <div className="dashboard-grid" style={{ 
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))',
@@ -154,7 +151,7 @@ function Dashboard() {
               fontWeight: 'bold',
               flexShrink: 0
             }}>
-              {userData.firstName[0]}{userData.lastName[0]}
+              {displayName[0] || 'U'}
             </div>
             <div>
               <h2 style={{ 
@@ -162,14 +159,14 @@ function Dashboard() {
                 color: '#1a1a2e', 
                 margin: 0 
               }}>
-                Welcome back, {userData.firstName}! 👋
+                Welcome back, {displayName}! 👋
               </h2>
               <p style={{ 
                 color: '#6b7280', 
                 margin: 0,
                 fontSize: 'clamp(0.85rem, 1vw, 0.95rem)'
               }}>
-                {userData.rank} • {userData.totalPoints} points
+                {streakDays > 0 ? `🔥 ${streakDays} day streak!` : 'Start your learning journey today!'}
               </p>
             </div>
           </div>
@@ -182,19 +179,21 @@ function Dashboard() {
           }}>
             <div>
               <div style={{ fontSize: 'clamp(0.75rem, 0.8vw, 0.85rem)', color: '#6b7280' }}>Member since</div>
-              <div style={{ fontWeight: '600', fontSize: 'clamp(0.85rem, 1vw, 0.95rem)' }}>{userData.joinDate}</div>
+              <div style={{ fontWeight: '600', fontSize: 'clamp(0.85rem, 1vw, 0.95rem)' }}>
+                {userData?.createdAt ? new Date(userData.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : 'N/A'}
+              </div>
             </div>
             <div>
               <div style={{ fontSize: 'clamp(0.75rem, 0.8vw, 0.85rem)', color: '#6b7280' }}>Learning streak</div>
-              <div style={{ fontWeight: '600', fontSize: 'clamp(0.85rem, 1vw, 0.95rem)' }}>🔥 {userData.streak} days</div>
+              <div style={{ fontWeight: '600', fontSize: 'clamp(0.85rem, 1vw, 0.95rem)' }}>🔥 {streakDays} days</div>
             </div>
             <div>
               <div style={{ fontSize: 'clamp(0.75rem, 0.8vw, 0.85rem)', color: '#6b7280' }}>Total hours</div>
-              <div style={{ fontWeight: '600', fontSize: 'clamp(0.85rem, 1vw, 0.95rem)' }}>⏱️ {userData.totalHours}h</div>
+              <div style={{ fontWeight: '600', fontSize: 'clamp(0.85rem, 1vw, 0.95rem)' }}>⏱️ {totalHours}h</div>
             </div>
             <div>
               <div style={{ fontSize: 'clamp(0.75rem, 0.8vw, 0.85rem)', color: '#6b7280' }}>Courses completed</div>
-              <div style={{ fontWeight: '600', fontSize: 'clamp(0.85rem, 1vw, 0.95rem)' }}>🎓 {userData.coursesCompleted}</div>
+              <div style={{ fontWeight: '600', fontSize: 'clamp(0.85rem, 1vw, 0.95rem)' }}>🎓 {stats.completedCourses}</div>
             </div>
           </div>
         </div>
@@ -217,7 +216,7 @@ function Dashboard() {
               fontWeight: 'bold', 
               color: '#1a1a2e' 
             }}>
-              {enrolledCourses.length}
+              {stats.totalEnrollments}
             </div>
             <div style={{ fontSize: 'clamp(0.75rem, 0.8vw, 0.85rem)', color: '#6b7280' }}>Active Courses</div>
           </div>
@@ -234,14 +233,14 @@ function Dashboard() {
               fontWeight: 'bold', 
               color: '#1a1a2e' 
             }}>
-              {userData.badges.length}
+              {achievements.length}
             </div>
             <div style={{ fontSize: 'clamp(0.75rem, 0.8vw, 0.85rem)', color: '#6b7280' }}>Badges Earned</div>
           </div>
         </div>
       </div>
 
-      {/* Tabs - Responsive */}
+      {/* Tabs */}
       <div className="tabs-container" style={{
         display: 'flex',
         gap: 'clamp(0.5rem, 1vw, 1rem)',
@@ -275,7 +274,7 @@ function Dashboard() {
         ))}
       </div>
 
-      {/* Tab Content - Overview - Responsive */}
+      {/* Tab Content - Overview */}
       {activeTab === 'overview' && (
         <div className="dashboard-content" style={{
           display: 'grid',
@@ -301,19 +300,6 @@ function Dashboard() {
                 View All →
               </Link>
             </div>
-            
-            {error && (
-              <div style={{
-                padding: '0.75rem',
-                background: '#fef2f2',
-                color: '#ef4444',
-                borderRadius: '8px',
-                marginBottom: '1rem',
-                fontSize: 'clamp(0.85rem, 1vw, 0.9rem)'
-              }}>
-                {error}
-              </div>
-            )}
             
             {enrolledCourses.length === 0 ? (
               <div style={{
@@ -433,39 +419,14 @@ function Dashboard() {
               }}>
                 📅 Upcoming Sessions
               </h3>
-              {upcomingSessions.map(session => (
-                <div key={session.id} style={{
-                  padding: '0.75rem 0',
-                  borderBottom: '1px solid #e5e7eb',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  gap: '0.5rem'
-                }}>
-                  <div>
-                    <div style={{ 
-                      fontSize: 'clamp(0.85rem, 1vw, 0.9rem)', 
-                      color: '#1a1a2e' 
-                    }}>
-                      {session.title}
-                    </div>
-                    <div style={{ 
-                      fontSize: 'clamp(0.75rem, 0.8vw, 0.8rem)', 
-                      color: '#6b7280' 
-                    }}>
-                      {session.group}
-                    </div>
-                  </div>
-                  <div style={{ 
-                    fontSize: 'clamp(0.75rem, 0.8vw, 0.8rem)', 
-                    color: '#6c5ce7', 
-                    fontWeight: '500' 
-                  }}>
-                    {session.time}
-                  </div>
-                </div>
-              ))}
+              <div style={{
+                padding: '1rem',
+                textAlign: 'center',
+                color: '#6b7280',
+                fontSize: 'clamp(0.9rem, 1vw, 1rem)'
+              }}>
+                Check your study groups for upcoming sessions!
+              </div>
             </div>
 
             <div style={{
@@ -479,50 +440,64 @@ function Dashboard() {
                 color: '#1a1a2e', 
                 marginBottom: '1rem' 
               }}>
-                📝 Recent Activity
+                📝 Quick Stats
               </h3>
-              {recentActivity.map(activity => (
-                <div key={activity.id} style={{
-                  padding: '0.75rem 0',
-                  borderBottom: '1px solid #e5e7eb',
-                  display: 'flex',
-                  gap: '0.75rem',
-                  alignItems: 'flex-start',
-                  flexWrap: 'wrap'
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, 1fr)',
+                gap: '0.75rem'
+              }}>
+                <div style={{
+                  padding: '0.75rem',
+                  background: '#f5f5f5',
+                  borderRadius: '8px',
+                  textAlign: 'center'
                 }}>
-                  <span style={{ fontSize: 'clamp(1rem, 1.2vw, 1.2rem)', flexShrink: 0 }}>
-                    {activity.icon}
-                  </span>
-                  <div style={{ flex: 1, minWidth: '100px' }}>
-                    <div style={{ 
-                      fontSize: 'clamp(0.85rem, 1vw, 0.9rem)', 
-                      color: '#1a1a2e' 
-                    }}>
-                      {activity.action}
-                      {activity.score && <span style={{ color: '#6c5ce7' }}> ({activity.score})</span>}
-                    </div>
-                    <div style={{ 
-                      fontSize: 'clamp(0.75rem, 0.8vw, 0.8rem)', 
-                      color: '#6b7280' 
-                    }}>
-                      {activity.course || activity.badge || activity.group}
-                    </div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#6c5ce7' }}>
+                    {stats.totalLessons}
                   </div>
-                  <div style={{ 
-                    fontSize: 'clamp(0.65rem, 0.7vw, 0.7rem)', 
-                    color: '#9ca3af', 
-                    whiteSpace: 'nowrap' 
-                  }}>
-                    {activity.time}
-                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>Total Lessons</div>
                 </div>
-              ))}
+                <div style={{
+                  padding: '0.75rem',
+                  background: '#f5f5f5',
+                  borderRadius: '8px',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#34d399' }}>
+                    {stats.completedLessons}
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>Lessons Done</div>
+                </div>
+                <div style={{
+                  padding: '0.75rem',
+                  background: '#f5f5f5',
+                  borderRadius: '8px',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#fbbf24' }}>
+                    {stats.completedCourses}
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>Courses Done</div>
+                </div>
+                <div style={{
+                  padding: '0.75rem',
+                  background: '#f5f5f5',
+                  borderRadius: '8px',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#f87171' }}>
+                    {streakDays}
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>Day Streak</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Tab Content - Courses - Responsive */}
+      {/* Tab Content - Courses */}
       {activeTab === 'courses' && (
         <div className="courses-grid" style={{
           display: 'grid',
@@ -612,62 +587,7 @@ function Dashboard() {
         </div>
       )}
 
-      {/* Tab Content - Activity */}
-      {activeTab === 'activity' && (
-        <div>
-          <h3 style={{ 
-            marginBottom: '1.5rem', 
-            color: '#1a1a2e',
-            fontSize: 'clamp(1.1rem, 1.5vw, 1.2rem)'
-          }}>
-            All Activity
-          </h3>
-          <div style={{
-            padding: 'clamp(1rem, 1.5vw, 1.5rem)',
-            background: '#fafafa',
-            borderRadius: '12px',
-            border: '1px solid #e5e7eb'
-          }}>
-            {recentActivity.map(activity => (
-              <div key={activity.id} style={{
-                padding: '1rem 0',
-                borderBottom: '1px solid #e5e7eb',
-                display: 'flex',
-                gap: '1rem',
-                alignItems: 'center',
-                flexWrap: 'wrap'
-              }}>
-                <span style={{ fontSize: 'clamp(1.2rem, 1.5vw, 1.5rem)', flexShrink: 0 }}>
-                  {activity.icon}
-                </span>
-                <div style={{ flex: 1, minWidth: '120px' }}>
-                  <div style={{ 
-                    fontSize: 'clamp(0.9rem, 1vw, 0.95rem)', 
-                    color: '#1a1a2e' 
-                  }}>
-                    {activity.action}
-                    {activity.score && <span style={{ color: '#6c5ce7' }}> ({activity.score})</span>}
-                  </div>
-                  <div style={{ 
-                    fontSize: 'clamp(0.8rem, 0.9vw, 0.85rem)', 
-                    color: '#6b7280' 
-                  }}>
-                    {activity.course || activity.badge || activity.group}
-                  </div>
-                </div>
-                <div style={{ 
-                  fontSize: 'clamp(0.7rem, 0.8vw, 0.8rem)', 
-                  color: '#9ca3af' 
-                }}>
-                  {activity.time}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Tab Content - Achievements - Responsive */}
+      {/* Tab Content - Achievements */}
       {activeTab === 'achievements' && (
         <div>
           <h3 style={{ 
@@ -682,33 +602,57 @@ function Dashboard() {
             gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 150px), 1fr))',
             gap: 'clamp(1rem, 1.5vw, 1.5rem)'
           }}>
-            {userData.badges.map((badge, index) => (
-              <div key={index} style={{
-                padding: 'clamp(1rem, 1.5vw, 1.5rem)',
+            {achievements.length === 0 ? (
+              <div style={{
+                padding: 'clamp(1.5rem, 2vw, 2rem)',
                 textAlign: 'center',
                 background: '#fafafa',
                 borderRadius: '12px',
                 border: '1px solid #e5e7eb',
-                transition: 'transform 0.2s'
+                gridColumn: '1 / -1'
               }}>
-                <div style={{ fontSize: 'clamp(2rem, 3vw, 3rem)' }}>{badge.split(' ')[0]}</div>
-                <div style={{ 
-                  fontWeight: '600', 
-                  color: '#1a1a2e',
-                  marginTop: '0.5rem',
-                  fontSize: 'clamp(0.8rem, 0.9vw, 0.9rem)',
-                  wordBreak: 'break-word'
-                }}>
-                  {badge}
-                </div>
-                <div style={{ 
-                  fontSize: 'clamp(0.7rem, 0.8vw, 0.8rem)', 
-                  color: '#6b7280' 
-                }}>
-                  Earned {index + 1} month ago
-                </div>
+                <div style={{ fontSize: 'clamp(2.5rem, 4vw, 3rem)', marginBottom: '0.5rem' }}>🏅</div>
+                <p style={{ color: '#6b7280' }}>No achievements yet. Start learning to earn badges!</p>
               </div>
-            ))}
+            ) : (
+              achievements.map((badge, index) => (
+                <div key={index} style={{
+                  padding: 'clamp(1rem, 1.5vw, 1.5rem)',
+                  textAlign: 'center',
+                  background: '#fafafa',
+                  borderRadius: '12px',
+                  border: '1px solid #e5e7eb',
+                  transition: 'transform 0.2s'
+                }}>
+                  <div style={{ fontSize: 'clamp(2rem, 3vw, 3rem)' }}>{badge.icon || '🏅'}</div>
+                  <div style={{ 
+                    fontWeight: '600', 
+                    color: '#1a1a2e',
+                    marginTop: '0.5rem',
+                    fontSize: 'clamp(0.8rem, 0.9vw, 0.9rem)',
+                    wordBreak: 'break-word'
+                  }}>
+                    {badge.name}
+                  </div>
+                  {badge.description && (
+                    <div style={{ 
+                      fontSize: 'clamp(0.7rem, 0.8vw, 0.75rem)', 
+                      color: '#6b7280',
+                      marginTop: '0.25rem'
+                    }}>
+                      {badge.description}
+                    </div>
+                  )}
+                  <div style={{ 
+                    fontSize: 'clamp(0.65rem, 0.7vw, 0.7rem)', 
+                    color: '#9ca3af',
+                    marginTop: '0.25rem'
+                  }}>
+                    {badge.earnedAt ? `Earned ${new Date(badge.earnedAt).toLocaleDateString()}` : 'Earned recently'}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}

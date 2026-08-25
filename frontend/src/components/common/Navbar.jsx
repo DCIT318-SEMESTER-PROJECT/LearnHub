@@ -20,6 +20,7 @@ export default function Navbar() {
 
   const getInitials = () => {
     if (!user) return 'U';
+    if (user.avatarUrl) return '';
     const first = user.firstName ? user.firstName[0] : '';
     const last = user.lastName ? user.lastName[0] : '';
     return (first + last).toUpperCase() || 'U';
@@ -68,16 +69,18 @@ export default function Navbar() {
                 width: '32px',
                 height: '32px',
                 borderRadius: '50%',
-                background: '#6c5ce7',
-                color: 'white',
+                background: user.avatarUrl 
+                  ? `url(${user.avatarUrl}) center/cover no-repeat` 
+                  : '#6c5ce7',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontWeight: 'bold',
                 fontSize: '0.85rem',
-                flexShrink: 0
+                flexShrink: 0,
+                color: 'white'
               }}>
-                {getInitials()}
+                {!user.avatarUrl && (user.firstName?.[0] || 'U')}
               </div>
               <span style={{ fontSize: '0.9rem' }}>
                 {user.firstName || 'User'}
@@ -126,16 +129,18 @@ export default function Navbar() {
                 width: '40px',
                 height: '40px',
                 borderRadius: '50%',
-                background: '#6c5ce7',
-                color: 'white',
+                background: user.avatarUrl 
+                  ? `url(${user.avatarUrl}) center/cover no-repeat` 
+                  : '#6c5ce7',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontWeight: 'bold',
                 fontSize: '1rem',
-                flexShrink: 0
+                flexShrink: 0,
+                color: 'white'
               }}>
-                {getInitials()}
+                {!user.avatarUrl && getInitials()}
               </div>
               <div>
                 <div style={{ fontWeight: '600', fontSize: '0.95rem', color: '#1a1a2e' }}>
@@ -157,8 +162,7 @@ export default function Navbar() {
             display: 'block',
             fontWeight: pathname === '/courses' ? '600' : '400'
           }}>
-            📚 Courses
-          </Link>
+            📚 Courses          </Link>
 
           <Link to="/study-groups" className="mobile-nav-link" onClick={closeMenu} style={{
             padding: '0.75rem 1rem',
