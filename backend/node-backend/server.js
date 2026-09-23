@@ -3,7 +3,6 @@ const express = require('express');
 const cors = require('cors');
 const http = require('http');
 const { Server } = require('socket.io');
-const db = require('./src/config/database');
 
 // Import routes
 const authRoutes = require('./src/routes/authRoutes');
@@ -21,7 +20,11 @@ const app = express();
 const server = http.createServer(app);
 
 // ─── CORS Configuration ───
-const allowedOrigins = ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175'];
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:5175'
+];
 
 app.use(cors({
   origin: function (origin, callback) {
@@ -55,7 +58,9 @@ const io = new Server(server, {
   }
 });
 
-app.use(express.json());
+// ─── INCREASED BODY LIMIT FOR AVATAR UPLOADS ───
+app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ limit: '5mb', extended: true }));
 
 // Routes
 app.use('/api/auth', authRoutes);

@@ -9,7 +9,6 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 exports.register = async (req, res) => {
   try {
     const { firstName, lastName, email, password } = req.body;
-    
     console.log('📝 Registration attempt:', { firstName, lastName, email });
 
     if (!firstName || !lastName || !email || !password) {
@@ -24,7 +23,6 @@ exports.register = async (req, res) => {
     const userId = await User.create({ firstName, lastName, email, password });
     const user = await User.findById(userId);
     
-    // Award welcome achievement
     await Achievement.awardWelcomeAchievement(userId);
     const achievements = await Achievement.getUserBadges(userId);
     
@@ -53,7 +51,6 @@ exports.register = async (req, res) => {
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    
     console.log('🔑 Login attempt:', email);
 
     if (!email || !password) {
@@ -72,12 +69,8 @@ exports.login = async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    // Update streak
     await User.updateStreak(user.id);
-    
     const updatedUser = await User.findById(user.id);
-    
-    // Get achievements
     const achievements = await Achievement.getUserBadges(user.id);
     
     const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
@@ -163,12 +156,10 @@ exports.uploadAvatar = async (req, res) => {
       return res.status(400).json({ error: 'No avatar data provided' });
     }
 
-    // Validate base64 image data
     if (!avatarData.startsWith('data:image/')) {
       return res.status(400).json({ error: 'Invalid image format' });
     }
 
-    // Check size (max 2MB)
     const sizeInBytes = Buffer.byteLength(avatarData, 'utf8');
     if (sizeInBytes > 2 * 1024 * 1024) {
       return res.status(400).json({ error: 'Image size must be less than 2MB' });
@@ -192,7 +183,6 @@ exports.uploadAvatar = async (req, res) => {
 exports.removeAvatar = async (req, res) => {
   try {
     const userId = req.userId;
-    
     await User.updateAvatar(userId, '');
     const user = await User.findById(userId);
     
@@ -219,6 +209,108 @@ exports.getAchievements = async (req, res) => {
   }
 };
 
+exports.getDashboardSummary = async (req, res) => {
+  try {
+    const userId = req.userId;
+    console.log('📊 Getting dashboard summary for user:', userId);
+    
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // ✅ Count active courses (enrolled but not completed)
+    const activeCoursesResult = await db.getAsync(
+      `SELECT COUNT(*) as count FROM enrollments 
+       WHERE userId = ? AND isCompleted = 0`,
+      [userId]
+    );
+    const activeCoursesCount = activeCoursesResult ? activeCoursesResult.count : 0;
+    
+    // ✅ Calculate total learning hours from lesson_progress watchTimeSeconds
+    const totalWatchTimeResult = await db.getAsync(
+      `SELECT COALESCE(SUM(watchTimeSeconds), 0) as totalSeconds 
+       FROM lesson_progress 
+       WHERE userId = ?`,
+      [userId]
+    );
+    const totalSeconds = totalWatchTimeResult ? totalWatchTimeResult.totalSeconds : 0;
+    const totalLearningHours = Math.round((totalSeconds / 3600) * 10) / 10;
+    
+    // ✅ Count total badges/achievements
+    const badgesResult = await db.getAsync(
+      `SELECT COUNT(*) as count FROM user_achievements WHERE userId = ?`,
+      [userId]
+    );
+    const badgesCount = badgesResult ? badgesResult.count : 0;
+    
+    // Get the most recent enrollment (in-progress course)
+    const currentCourse = await db.getAsync(
+      `SELECT e.*, c.title, c.imageUrl, c.duration, c.instructorName,
+              (SELECT COUNT(*) FROM lessons WHERE courseId = c.id) as totalLessons
+       FROM enrollments e
+       JOIN courses c ON e.courseId = c.id
+       WHERE e.userId = ? AND e.isCompleted = 0
+       ORDER BY e.lastAccessedAt DESC
+       LIMIT 1`,
+      [userId]
+    );
+    
+    let courseData = null;
+    if (currentCourse) {
+      courseData = {
+        id: currentCourse.courseId,
+        title: currentCourse.title,
+        imageUrl: currentCourse.imageUrl,
+        progress: currentCourse.progressPercentage || 0,
+        completedLessons: currentCourse.completedLessons || 0,
+        totalLessons: currentCourse.totalLessons || 0,
+        duration: currentCourse.duration,
+        instructorName: currentCourse.instructorName
+      };
+    }
+    
+    // Get most recent achievement
+    const recentAchievement = await db.getAsync(
+      `SELECT a.name, a.icon, a.description, ua.earnedAt
+       FROM user_achievements ua
+       JOIN achievements a ON ua.achievementId = a.id
+       WHERE ua.userId = ?
+       ORDER BY ua.earnedAt DESC
+       LIMIT 1`,
+      [userId]
+    );
+    
+    const response = {
+      streakDays: user.streakDays || 0,
+      activeCourses: activeCoursesCount,
+      totalLearningHours: totalLearningHours,
+      badgesCount: badgesCount,
+      currentCourse: courseData,
+      recentAchievement: recentAchievement ? {
+        name: recentAchievement.name,
+        icon: recentAchievement.icon,
+        description: recentAchievement.description,
+        earnedAt: recentAchievement.earnedAt
+      } : null
+    };
+    
+    console.log('📊 Dashboard summary:', {
+      streak: response.streakDays,
+      activeCourses: response.activeCourses,
+      hours: response.totalLearningHours,
+      badges: response.badgesCount,
+      hasCourse: !!response.currentCourse,
+      hasAchievement: !!response.recentAchievement
+    });
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Error fetching dashboard summary:', error);
+    res.status(500).json({ error: 'Failed to fetch dashboard summary' });
+  }
+};
+
 exports.getAllUsers = async (req, res) => {
   try {
     const users = await User.getAll();
@@ -229,50 +321,22 @@ exports.getAllUsers = async (req, res) => {
   }
 };
 
-exports.debugUsers = async (req, res) => {
-  try {
-    const users = await db.allAsync('SELECT id, firstName, lastName, email, avatarUrl, bio, streakDays FROM users');
-    res.json(users);
-  } catch (error) {
-    console.error('Error fetching users:', error);
-    res.status(500).json({ error: error.message });
-  }
-};
-
 exports.deleteAccount = async (req, res) => {
   try {
     const userId = req.userId;
-    
     console.log(`🗑️ Deleting account for user ${userId}`);
     
-    // Start a transaction to delete all user data
     await db.runAsync('BEGIN TRANSACTION');
-    
-    // Delete user's achievements
     await db.runAsync('DELETE FROM user_achievements WHERE userId = ?', [userId]);
-    
-    // Delete study group memberships
     await db.runAsync('DELETE FROM study_group_members WHERE userId = ?', [userId]);
-    
-    // Delete study group messages
     await db.runAsync('DELETE FROM study_group_messages WHERE userId = ?', [userId]);
-    
-    // Delete lesson progress
     await db.runAsync('DELETE FROM lesson_progress WHERE userId = ?', [userId]);
-    
-    // Delete quiz attempts
     await db.runAsync('DELETE FROM quiz_attempts WHERE userId = ?', [userId]);
-    
-    // Delete enrollments
     await db.runAsync('DELETE FROM enrollments WHERE userId = ?', [userId]);
-    
-    // Delete the user
     await db.runAsync('DELETE FROM users WHERE id = ?', [userId]);
-    
     await db.runAsync('COMMIT');
     
     console.log(`✅ Account deleted successfully for user ${userId}`);
-    
     res.json({ success: true, message: 'Account deleted successfully' });
   } catch (error) {
     await db.runAsync('ROLLBACK');

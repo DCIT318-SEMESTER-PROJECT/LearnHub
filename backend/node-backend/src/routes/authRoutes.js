@@ -18,11 +18,11 @@ router.delete('/avatar', authenticate, authController.removeAvatar);
 // Achievement routes
 router.get('/achievements', authenticate, authController.getAchievements);
 
+// Dashboard summary (for homepage personalization)
+router.get('/dashboard-summary', authenticate, authController.getDashboardSummary);
+
 // Account management
 router.delete('/account', authenticate, authController.deleteAccount);
 router.get('/users', authenticate, authController.getAllUsers);
-
-// Debug route (remove in production)
-router.get('/debug/users', authenticate, authController.debugUsers);
 
 module.exports = router;
