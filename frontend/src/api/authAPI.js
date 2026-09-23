@@ -16,3 +16,27 @@ export const getCurrentUser = () => {
 export const updateProfile = (userData) => {
   return api.put('/auth/profile', userData);
 };
+
+export const getProfile = () => {
+  return api.get('/auth/profile');
+};
+
+export const uploadAvatar = (avatarData) => {
+  return api.post('/auth/avatar', { avatarData });
+};
+
+export const removeAvatar = () => {
+  return api.delete('/auth/avatar');
+};
+
+export const getAchievements = () => {
+  return api.get('/auth/achievements');
+};
+
+export const getDashboardSummary = () => {
+  return api.get('/auth/dashboard-summary');
+};
+
+export const deleteAccount = () => {
+  return api.delete('/auth/account');
+};
