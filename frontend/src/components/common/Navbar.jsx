@@ -7,7 +7,7 @@ import InboxDrawer from '../messages/InboxDrawer';
 
 function Navbar() {
   const { user, logout } = useAuth();
-  const { theme, toggleTheme, isDark } = useTheme();
+  const { toggleTheme, isDark } = useTheme();
   const { unreadCount } = useMessages();
   const navigate = useNavigate();
   const location = useLocation();
@@ -15,7 +15,7 @@ function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
 
-  // Close both when the route changes
+  // Close menus when the route changes
   useEffect(() => {
     setMenuOpen(false);
     setInboxOpen(false);
@@ -38,7 +38,7 @@ function Navbar() {
           <span className="brand-name">LearnHub</span>
         </Link>
 
-        {/* Links */}
+        {/* Desktop links */}
         <div className="navbar-links">
           <NavLink to="/courses" className={navLinkClass}>Courses</NavLink>
           {user && user.role === 'Student' && (
@@ -49,19 +49,26 @@ function Navbar() {
           )}
         </div>
 
-        {/* Actions */}
+        {/* Actions — hidden on mobile */}
         <div className="navbar-actions">
           {/* Theme toggle */}
           <button
             onClick={toggleTheme}
             className="nav-btn-ghost"
             title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-            style={{ width: '38px', padding: 0, height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            style={{
+              width: '38px',
+              padding: 0,
+              height: '38px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
           >
             {isDark ? '☀️' : '🌙'}
           </button>
 
-          {/* Bell — only when logged in */}
+          {/* Bell */}
           {user && (
             <div style={{ position: 'relative' }}>
               <button
@@ -121,10 +128,18 @@ function Navbar() {
                   <img
                     src={user.avatarUrl}
                     alt=""
-                    style={{ width: '24px', height: '24px', borderRadius: '50%', objectFit: 'cover', verticalAlign: 'middle' }}
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '50%',
+                      objectFit: 'cover',
+                      verticalAlign: 'middle',
+                    }}
                   />
                 ) : (
-                  <span style={{ fontWeight: 600 }}>{user.firstName?.[0]}{user.lastName?.[0]}</span>
+                  <span style={{ fontWeight: 600 }}>
+                    {user.firstName?.[0]}{user.lastName?.[0]}
+                  </span>
                 )}
               </Link>
               <button onClick={handleLogout} className="nav-btn-ghost">Sign Out</button>
@@ -135,35 +150,45 @@ function Navbar() {
               <Link to="/register" className="nav-btn-primary">Sign Up</Link>
             </>
           )}
-
-          {/* Mobile hamburger */}
-          <button
-            className="hamburger"
-            onClick={() => setMenuOpen((v) => !v)}
-            aria-label="Menu"
-          >
-            {menuOpen ? '✕' : '☰'}
-          </button>
         </div>
+
+        {/* ✅ Hamburger — OUTSIDE navbar-actions so it isn't hidden */}
+        <button
+          className="hamburger"
+          onClick={() => setMenuOpen((v) => !v)}
+          aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+          aria-expanded={menuOpen}
+        >
+          {menuOpen ? '✕' : '☰'}
+        </button>
       </div>
 
       {/* Mobile menu */}
       {menuOpen && (
         <div className="mobile-menu">
-          <Link to="/courses" className="mobile-nav-link">Courses</Link>
+          <Link to="/courses" className="mobile-nav-link">📚 Courses</Link>
           {user && user.role === 'Student' && (
-            <Link to="/study-groups" className="mobile-nav-link">Study Groups</Link>
+            <Link to="/study-groups" className="mobile-nav-link">👥 Study Groups</Link>
           )}
           {user && (
             <>
-              <Link to="/dashboard" className="mobile-nav-link">Dashboard</Link>
-              <Link to="/profile" className="mobile-nav-link">Profile</Link>
+              <Link to="/dashboard" className="mobile-nav-link">📊 Dashboard</Link>
+              <Link to="/profile" className="mobile-nav-link">👤 Profile</Link>
               <button
                 onClick={handleLogout}
                 className="mobile-nav-link"
-                style={{ background: 'transparent', border: 'none', textAlign: 'left', cursor: 'pointer', color: 'inherit' }}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  color: 'inherit',
+                  fontFamily: 'inherit',
+                  fontSize: 'inherit',
+                  width: '100%',
+                }}
               >
-                Sign Out
+                🚪 Sign Out
               </button>
             </>
           )}
@@ -173,6 +198,25 @@ function Navbar() {
               <Link to="/register" className="mobile-nav-link">Sign Up</Link>
             </>
           )}
+
+          {/* Mobile-only extras — theme toggle + messages link */}
+          <div
+            style={{
+              display: 'flex',
+              gap: '0.5rem',
+              marginTop: '0.5rem',
+              paddingTop: '0.75rem',
+              borderTop: '1px solid var(--border-primary)',
+            }}
+          >
+            <button
+              onClick={toggleTheme}
+              className="nav-btn-ghost"
+              style={{ flex: 1, height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              {isDark ? '☀️ Light mode' : '🌙 Dark mode'}
+            </button>
+          </div>
         </div>
       )}
     </nav>
