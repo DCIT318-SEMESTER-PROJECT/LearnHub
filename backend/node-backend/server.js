@@ -23,26 +23,23 @@ const app = express();
 const server = http.createServer(app);
 
 // ─── CORS ──────────────────────────────────────
-// Local dev + your future Netlify URL.
-// Replace 'https://learnhub-xxxx.netlify.app' with your actual Netlify URL
-// after you deploy the frontend (Part 4 in the deployment guide).
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
   'http://localhost:5175',
-  // 'https://learnhub-xxxx.netlify.app',   // ← uncomment and replace after Netlify deploy
+  // Add your Netlify URL here after frontend deploy:
+  // 'https://your-site.netlify.app',
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, curl, Postman)
     if (!origin) return callback(null, true);
 
     if (
       allowedOrigins.indexOf(origin) !== -1 ||
       origin.startsWith('http://localhost') ||
-      origin.endsWith('.netlify.app') ||           // any Netlify subdomain
-      origin.endsWith('.onrender.com')             // any Render subdomain
+      origin.endsWith('.netlify.app') ||
+      origin.endsWith('.onrender.com')
     ) {
       callback(null, true);
     } else {
@@ -92,6 +89,26 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/public', publicRoutes);
 app.use('/api/messages', messageRoutes);
 
+// ─── Root — friendly index ─────────────────────
+app.get('/', (req, res) => {
+  res.json({
+    name: 'LearnHub API',
+    status: 'running',
+    endpoints: [
+      '/api/test',
+      '/api/auth',
+      '/api/courses',
+      '/api/enrollments',
+      '/api/study-groups',
+      '/api/quizzes',
+      '/api/ratings',
+      '/api/ai',
+      '/api/public',
+      '/api/messages',
+    ],
+  });
+});
+
 // ─── Health check ──────────────────────────────
 app.get('/api/test', (req, res) => {
   res.json({ message: 'LearnHub API is running! 🚀' });
@@ -137,7 +154,6 @@ io.on('connection', (socket) => {
 });
 
 // ─── Start server ──────────────────────────────
-// ✅ FIX: Render assigns a port dynamically. Falling back to 5000 for local dev.
 const PORT = process.env.PORT || 5000;
 
 server.listen(PORT, () => {
