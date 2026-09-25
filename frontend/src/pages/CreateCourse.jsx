@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import ConfirmDialog from '../components/common/ConfirmDialog';
+import api from '../api/axiosConfig';
 import {
   createCourse,
   updateCourse,
@@ -10,28 +12,38 @@ import {
   deleteModule,
   addLesson,
   deleteLesson,
-  publishCourse
+  publishCourse,
 } from '../api/coursesAPI';
 
 const CATEGORIES = [
   'Web Development', 'Programming', 'Data Science', 'Design',
   'Mobile Development', 'DevOps', 'Business', 'Marketing',
-  'Photography', 'Music', 'Other'
+  'Photography', 'Music', 'Other',
 ];
 
 const LEVELS = ['Beginner', 'Intermediate', 'Advanced'];
 const LANGUAGES = ['English', 'Spanish', 'French', 'German', 'Chinese', 'Arabic', 'Other'];
+
+const STEPS = [
+  { num: 1, label: 'Basics',      icon: '📝' },
+  { num: 2, label: 'Details',     icon: '⚙️' },
+  { num: 3, label: 'Thumbnail',   icon: '🖼️' },
+  { num: 4, label: 'Curriculum',  icon: '📚' },
+  { num: 5, label: 'Publish',     icon: '🚀' },
+];
 
 function CreateCourse() {
   const navigate = useNavigate();
   const { id: editCourseId } = useParams();
   const { user } = useAuth();
   const toast = useToast();
+  const fileInputRef = useRef(null);
 
   const [step, setStep] = useState(1);
   const [courseId, setCourseId] = useState(editCourseId ? parseInt(editCourseId) : null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
 
   const [courseData, setCourseData] = useState({
     title: '',
@@ -43,7 +55,7 @@ function CreateCourse() {
     language: 'English',
     prerequisites: '',
     learningOutcomes: '',
-    imageUrl: ''
+    imageUrl: '',
   });
 
   const [modules, setModules] = useState([]);
@@ -52,13 +64,16 @@ function CreateCourse() {
   const [addingLessonTo, setAddingLessonTo] = useState(null);
   const [newLessonTitle, setNewLessonTitle] = useState('');
   const [newLessonDuration, setNewLessonDuration] = useState('10 min');
-
   const [errors, setErrors] = useState({});
 
+  // Confirm dialog state — null = hidden, otherwise { type, moduleId?, lessonId? }
+  const [confirmDelete, setConfirmDelete] = useState(null);
+
+  // AI description generation
+  const [generatingDescription, setGeneratingDescription] = useState(false);
+
   useEffect(() => {
-    if (editCourseId) {
-      loadCourseForEdit();
-    }
+    if (editCourseId) loadCourseForEdit();
   }, [editCourseId]);
 
   const loadCourseForEdit = async () => {
@@ -66,7 +81,6 @@ function CreateCourse() {
       setLoading(true);
       const response = await getCourseForEdit(editCourseId);
       const data = response.data;
-
       setCourseData({
         title: data.title || '',
         description: data.description || '',
@@ -77,9 +91,8 @@ function CreateCourse() {
         language: data.language || 'English',
         prerequisites: data.prerequisites || '',
         learningOutcomes: data.learningOutcomes || '',
-        imageUrl: data.imageUrl || ''
+        imageUrl: data.imageUrl || '',
       });
-
       setModules(data.modules || []);
       setCourseId(data.id);
     } catch (err) {
@@ -97,10 +110,30 @@ function CreateCourse() {
     if (errors[name]) setErrors({ ...errors, [name]: '' });
   };
 
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  const handleGenerateDescription = async () => {
+    if (!courseData.title.trim()) {
+      toast.error('Type a course title first');
+      return;
+    }
+    try {
+      setGeneratingDescription(true);
+      const { data } = await api.post('/ai/generate-description', {
+        title: courseData.title,
+        category: courseData.category,
+        level: courseData.difficultyLevel,
+      });
+      setCourseData((prev) => ({ ...prev, description: data.description }));
+      toast.success('Description generated — edit as you like');
+    } catch (err) {
+      console.error('AI error:', err);
+      toast.error(err.response?.data?.error || 'AI generation failed');
+    } finally {
+      setGeneratingDescription(false);
+    }
+  };
 
+  const handleImageFile = (file) => {
+    if (!file) return;
     if (!file.type.startsWith('image/')) {
       toast.error('Please select an image file');
       return;
@@ -109,34 +142,39 @@ function CreateCourse() {
       toast.error('Image must be less than 2MB');
       return;
     }
-
     const reader = new FileReader();
     reader.onloadend = () => {
-      setCourseData({ ...courseData, imageUrl: reader.result });
+      setCourseData((prev) => ({ ...prev, imageUrl: reader.result }));
     };
     reader.readAsDataURL(file);
   };
 
-  // ─── Save Step 1: Basic Info ───
+  const handleImageUpload = (e) => handleImageFile(e.target.files[0]);
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    handleImageFile(e.dataTransfer.files?.[0]);
+  };
+
+  // ─── SAVE STEPS ──────────────────────────────────────────
   const saveBasicInfo = async () => {
     const newErrors = {};
     if (!courseData.title.trim()) newErrors.title = 'Title is required';
     if (!courseData.description.trim()) newErrors.description = 'Description is required';
-
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return false;
     }
-
     try {
       setSaving(true);
       if (!courseId) {
         const response = await createCourse(courseData);
         setCourseId(response.data.course.id);
-        toast.success('Course created! 🎉');
+        toast.success('Course created');
       } else {
         await updateCourse(courseId, courseData);
-        toast.success('Course updated');
+        toast.success('Basics saved');
       }
       return true;
     } catch (err) {
@@ -148,10 +186,9 @@ function CreateCourse() {
     }
   };
 
-  // ─── Save Step 2: Details ───
   const saveDetails = async () => {
     if (!courseId) {
-      toast.error('Save basic info first');
+      toast.error('Save basics first');
       return false;
     }
     try {
@@ -160,7 +197,6 @@ function CreateCourse() {
       toast.success('Details saved');
       return true;
     } catch (err) {
-      console.error('Error saving details:', err);
       toast.error('Failed to save details');
       return false;
     } finally {
@@ -168,10 +204,9 @@ function CreateCourse() {
     }
   };
 
-  // ─── Save Step 3: Thumbnail ───
   const saveThumbnail = async () => {
     if (!courseId) {
-      toast.error('Save basic info first');
+      toast.error('Save basics first');
       return false;
     }
     try {
@@ -180,7 +215,6 @@ function CreateCourse() {
       toast.success('Thumbnail saved');
       return true;
     } catch (err) {
-      console.error('Error saving thumbnail:', err);
       toast.error('Failed to save thumbnail');
       return false;
     } finally {
@@ -188,173 +222,158 @@ function CreateCourse() {
     }
   };
 
-  // ─── Add Module ───
+  // ─── MODULES & LESSONS ───────────────────────────────────
   const handleAddModule = async () => {
-    if (!newModuleTitle.trim()) {
-      toast.error('Module title is required');
-      return;
-    }
-    if (!courseId) {
-      toast.error('Save basic info first');
-      return;
-    }
-
+    if (!newModuleTitle.trim()) return toast.error('Module title is required');
+    if (!courseId) return toast.error('Save basics first');
     try {
       setSaving(true);
       const response = await addModule(courseId, {
         title: newModuleTitle,
-        description: newModuleDesc
+        description: newModuleDesc,
       });
       setModules([...modules, { ...response.data, lessons: [] }]);
       setNewModuleTitle('');
       setNewModuleDesc('');
       toast.success('Module added');
     } catch (err) {
-      console.error('Error adding module:', err);
       toast.error('Failed to add module');
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDeleteModule = async (moduleId) => {
-    if (!window.confirm('Delete this module? Lessons inside will be unassigned.')) return;
-
-    try {
-      await deleteModule(moduleId);
-      setModules(modules.filter(m => m.id !== moduleId));
-      toast.success('Module deleted');
-    } catch (err) {
-      console.error('Error deleting module:', err);
-      toast.error('Failed to delete module');
-    }
-  };
-
-  // ─── Add Lesson ───
   const handleAddLesson = async (moduleId) => {
-    if (!newLessonTitle.trim()) {
-      toast.error('Lesson title is required');
-      return;
-    }
-
+    if (!newLessonTitle.trim()) return toast.error('Lesson title is required');
     try {
       setSaving(true);
       const response = await addLesson(courseId, {
         moduleId,
         title: newLessonTitle,
         duration: newLessonDuration,
-        isFree: 1
+        isFree: 1,
       });
-
-      const updatedModules = modules.map(m =>
-        m.id === moduleId
-          ? { ...m, lessons: [...(m.lessons || []), response.data] }
-          : m
+      setModules(
+        modules.map((m) =>
+          m.id === moduleId ? { ...m, lessons: [...(m.lessons || []), response.data] } : m
+        )
       );
-      setModules(updatedModules);
       setNewLessonTitle('');
       setNewLessonDuration('10 min');
       setAddingLessonTo(null);
       toast.success('Lesson added');
     } catch (err) {
-      console.error('Error adding lesson:', err);
       toast.error('Failed to add lesson');
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDeleteLesson = async (moduleId, lessonId) => {
-    if (!window.confirm('Delete this lesson?')) return;
+  // Opens confirm dialog for module deletion
+  const handleDeleteModule = (moduleId) => {
+    setConfirmDelete({ type: 'module', moduleId });
+  };
+
+  // Opens confirm dialog for lesson deletion
+  const handleDeleteLesson = (moduleId, lessonId) => {
+    setConfirmDelete({ type: 'lesson', moduleId, lessonId });
+  };
+
+  // Runs when user confirms in the dialog
+  const performDelete = async () => {
+    if (!confirmDelete) return;
+    const { type, moduleId, lessonId } = confirmDelete;
+    setConfirmDelete(null);
 
     try {
-      await deleteLesson(lessonId);
-      const updatedModules = modules.map(m =>
-        m.id === moduleId
-          ? { ...m, lessons: (m.lessons || []).filter(l => l.id !== lessonId) }
-          : m
-      );
-      setModules(updatedModules);
-      toast.success('Lesson deleted');
+      if (type === 'module') {
+        await deleteModule(moduleId);
+        setModules(modules.filter((m) => m.id !== moduleId));
+        toast.success('Module deleted');
+      } else {
+        await deleteLesson(lessonId);
+        setModules(
+          modules.map((m) =>
+            m.id === moduleId
+              ? { ...m, lessons: (m.lessons || []).filter((l) => l.id !== lessonId) }
+              : m
+          )
+        );
+        toast.success('Lesson deleted');
+      }
     } catch (err) {
-      console.error('Error deleting lesson:', err);
-      toast.error('Failed to delete lesson');
+      toast.error(`Failed to delete ${type}`);
     }
   };
 
-  // ─── Navigation ───
+  // ─── NAVIGATION ──────────────────────────────────────────
   const goNext = async () => {
-    if (step === 1) {
-      const ok = await saveBasicInfo();
-      if (ok) setStep(2);
-    } else if (step === 2) {
-      const ok = await saveDetails();
-      if (ok) setStep(3);
-    } else if (step === 3) {
-      await saveThumbnail();
-      setStep(4);
-    } else if (step === 4) {
-      setStep(5);
-    }
+    if (step === 1) { if (await saveBasicInfo()) setStep(2); }
+    else if (step === 2) { if (await saveDetails()) setStep(3); }
+    else if (step === 3) { if (await saveThumbnail()) setStep(4); }
+    else if (step === 4) { setStep(5); }
   };
 
-  const goBack = () => {
-    if (step > 1) setStep(step - 1);
-  };
+  const goBack = () => { if (step > 1) setStep(step - 1); };
 
   const handlePublish = async () => {
-    if (!courseId) {
-      toast.error('Course not saved');
-      return;
-    }
-    if (modules.length === 0) {
-      toast.error('Add at least one module before publishing');
-      return;
-    }
-    const hasLessons = modules.some(m => m.lessons && m.lessons.length > 0);
-    if (!hasLessons) {
-      toast.error('Add at least one lesson before publishing');
-      return;
-    }
+    if (!courseId) return toast.error('Course not saved');
+    if (modules.length === 0) return toast.error('Add at least one module before publishing');
+    const hasLessons = modules.some((m) => m.lessons && m.lessons.length > 0);
+    if (!hasLessons) return toast.error('Add at least one lesson before publishing');
 
     try {
       setLoading(true);
       await publishCourse(courseId);
-      toast.success('Course published! 🎉');
+      toast.success('Course published');
       setTimeout(() => navigate(`/courses/${courseId}`), 800);
     } catch (err) {
-      console.error('Error publishing:', err);
       toast.error(err.response?.data?.error || 'Failed to publish');
     } finally {
       setLoading(false);
     }
   };
 
-  const steps = [
-    { num: 1, label: 'Basic Info', icon: '📝' },
-    { num: 2, label: 'Details', icon: '⚙️' },
-    { num: 3, label: 'Thumbnail', icon: '🖼️' },
-    { num: 4, label: 'Modules', icon: '📚' },
-    { num: 5, label: 'Publish', icon: '🚀' }
-  ];
-
   const totalLessons = modules.reduce((sum, m) => sum + (m.lessons?.length || 0), 0);
 
+  /* ─── shared styles ──────────────────────────────────── */
+  const label = {
+    display: 'block',
+    marginBottom: '0.45rem',
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+    fontSize: '0.85rem',
+  };
+
+  const input = {
+    width: '100%',
+    padding: '0.75rem 0.9rem',
+    background: 'var(--bg-input)',
+    border: '1px solid var(--border-input)',
+    borderRadius: '10px',
+    fontSize: '0.95rem',
+    color: 'var(--text-primary)',
+    outline: 'none',
+    transition: 'border-color 0.15s, box-shadow 0.15s',
+  };
+
+  const fieldset = { marginBottom: '1.25rem' };
+
   return (
-    <div style={{
-      maxWidth: '900px',
-      margin: '2rem auto',
-      padding: '0 clamp(1rem, 3vw, 2rem)',
-      width: '100%'
-    }}>
-      <Link to="/dashboard" style={{
-        color: '#6c5ce7',
-        textDecoration: 'none',
-        fontSize: '0.9rem',
-        display: 'inline-block',
-        marginBottom: '1.5rem',
-        fontWeight: '500'
-      }}>
+    <div style={{ maxWidth: '960px', margin: '2rem auto', padding: '0 clamp(1rem, 3vw, 2rem)', width: '100%' }}>
+      <Link
+        to="/dashboard"
+        style={{
+          color: 'var(--text-secondary)',
+          textDecoration: 'none',
+          fontSize: '0.9rem',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '0.4rem',
+          marginBottom: '1.5rem',
+          fontWeight: 500,
+        }}
+      >
         ← Back to Dashboard
       </Link>
 
@@ -363,105 +382,95 @@ function CreateCourse() {
         borderRadius: '20px',
         border: '1px solid var(--border-primary)',
         boxShadow: 'var(--shadow-card)',
-        overflow: 'hidden'
+        overflow: 'hidden',
       }}>
-        {/* Header */}
-        <div style={{
-          padding: 'clamp(1.25rem, 3vw, 2rem)',
-          borderBottom: '1px solid var(--border-primary)',
-          background: 'var(--bg-secondary)'
-        }}>
-          <h1 style={{
-            fontSize: 'clamp(1.3rem, 2.5vw, 1.6rem)',
-            color: 'var(--text-primary)',
-            margin: 0,
-            marginBottom: '0.25rem'
-          }}>
-            {editCourseId ? '✏️ Edit Course' : '🎬 Create New Course'}
-          </h1>
-          <p style={{
-            color: 'var(--text-tertiary)',
-            fontSize: '0.9rem',
-            margin: 0
-          }}>
-            Step {step} of {steps.length}: {steps[step - 1].label}
-          </p>
-
-          {/* Progress bar */}
-          <div style={{
-            marginTop: '1.25rem',
-            display: 'flex',
-            gap: '0.5rem'
-          }}>
-            {steps.map(s => (
-              <div
-                key={s.num}
-                style={{
-                  flex: 1,
-                  height: '4px',
-                  borderRadius: '2px',
-                  background: s.num <= step ? '#6c5ce7' : 'var(--border-primary)',
-                  transition: 'background 0.3s'
-                }}
-              />
-            ))}
+        {/* HEADER */}
+        <div style={{ padding: 'clamp(1.25rem, 3vw, 2rem)', borderBottom: '1px solid var(--border-primary)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
+            <div>
+              <h1 style={{ fontSize: 'clamp(1.3rem, 2.5vw, 1.6rem)', color: 'var(--text-primary)', margin: 0, fontWeight: 700 }}>
+                {editCourseId ? '✏️ Edit Course' : '🎬 Create a New Course'}
+              </h1>
+              <p style={{ color: 'var(--text-tertiary)', fontSize: '0.88rem', margin: '0.35rem 0 0' }}>
+                Step {step} of {STEPS.length} · {STEPS[step - 1].label}
+              </p>
+            </div>
+            <span style={{
+              padding: '0.4rem 0.9rem',
+              background: 'var(--accent-light)',
+              color: '#6c5ce7',
+              borderRadius: '20px',
+              fontSize: '0.78rem',
+              fontWeight: 700,
+              whiteSpace: 'nowrap',
+            }}>
+              {Math.round((step / STEPS.length) * 100)}%
+            </span>
           </div>
 
-          {/* Step labels */}
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            marginTop: '0.75rem',
-            fontSize: '0.7rem',
-            color: 'var(--text-tertiary)',
-            flexWrap: 'wrap',
-            gap: '0.25rem'
-          }}>
-            {steps.map(s => (
-              <span
-                key={s.num}
-                style={{
-                  color: s.num === step ? '#6c5ce7' : 'var(--text-tertiary)',
-                  fontWeight: s.num === step ? '600' : '400'
-                }}
-              >
-                {s.icon} {s.label}
-              </span>
-            ))}
+          {/* Stepper */}
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            {STEPS.map((s, i) => {
+              const done = s.num < step;
+              const active = s.num === step;
+              return (
+                <React.Fragment key={s.num}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    padding: '0.4rem 0.7rem',
+                    borderRadius: '20px',
+                    background: active ? 'var(--accent-light)' : done ? 'var(--bg-tertiary)' : 'transparent',
+                    border: `1px solid ${active ? '#6c5ce7' : 'transparent'}`,
+                    flexShrink: 0,
+                  }}>
+                    <span style={{
+                      width: '22px',
+                      height: '22px',
+                      borderRadius: '50%',
+                      background: done ? '#34d399' : active ? '#6c5ce7' : 'var(--bg-tertiary)',
+                      color: 'white',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '0.7rem',
+                      fontWeight: 700,
+                      flexShrink: 0,
+                    }}>
+                      {done ? '✓' : s.num}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '0.78rem',
+                        fontWeight: active ? 700 : 500,
+                        color: active ? '#6c5ce7' : done ? 'var(--text-secondary)' : 'var(--text-tertiary)',
+                        whiteSpace: 'nowrap',
+                      }}
+                      className="stepper-label"
+                    >
+                      {s.label}
+                    </span>
+                  </div>
+                  {i < STEPS.length - 1 && (
+                    <div style={{ flex: 1, height: '2px', background: done ? '#34d399' : 'var(--border-primary)', minWidth: '8px' }} />
+                  )}
+                </React.Fragment>
+              );
+            })}
           </div>
         </div>
 
-        {/* Body */}
+        {/* BODY */}
         <div style={{ padding: 'clamp(1.5rem, 3vw, 2rem)' }}>
 
-          {/* ══════════ STEP 1: BASIC INFO ══════════ */}
+          {/* STEP 1 — BASICS */}
           {step === 1 && (
             <div>
-              <h2 style={{
-                fontSize: '1.2rem',
-                color: 'var(--text-primary)',
-                marginBottom: '0.5rem'
-              }}>
-                Let's start with the basics
-              </h2>
-              <p style={{
-                color: 'var(--text-tertiary)',
-                fontSize: '0.9rem',
-                marginBottom: '1.5rem'
-              }}>
-                Give your course a clear, compelling title and description.
-              </p>
+              <SectionHeading title="Let's start with the basics" subtitle="Give your course a clear title and description. You can edit these later." />
 
-              <div style={{ marginBottom: '1.25rem' }}>
-                <label style={{
-                  display: 'block',
-                  marginBottom: '0.5rem',
-                  fontWeight: '500',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.9rem'
-                }}>
-                  Course Title *
-                </label>
+              <div style={fieldset}>
+                <label style={label}>Course Title *</label>
                 <input
                   type="text"
                   name="title"
@@ -469,730 +478,493 @@ function CreateCourse() {
                   onChange={handleChange}
                   placeholder="e.g., Master React from Scratch"
                   maxLength={100}
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    background: 'var(--bg-input)',
-                    border: `1px solid ${errors.title ? 'var(--error)' : 'var(--border-input)'}`,
-                    borderRadius: '8px',
-                    fontSize: '1rem',
-                    color: 'var(--text-primary)',
-                    outline: 'none'
-                  }}
+                  style={{ ...input, borderColor: errors.title ? 'var(--error)' : 'var(--border-input)' }}
                 />
-                {errors.title && (
-                  <div style={{ color: 'var(--error)', fontSize: '0.8rem', marginTop: '0.25rem' }}>
-                    {errors.title}
-                  </div>
-                )}
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', textAlign: 'right' }}>
-                  {courseData.title.length}/100
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.35rem' }}>
+                  {errors.title
+                    ? <span style={{ color: 'var(--error)', fontSize: '0.78rem' }}>{errors.title}</span>
+                    : <span />}
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{courseData.title.length}/100</span>
                 </div>
               </div>
 
-              <div style={{ marginBottom: '1.25rem' }}>
-                <label style={{
-                  display: 'block',
-                  marginBottom: '0.5rem',
-                  fontWeight: '500',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.9rem'
-                }}>
-                  Description *
-                </label>
+              <div style={fieldset}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '0.45rem',
+                    gap: '0.5rem',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <label style={{ ...label, marginBottom: 0 }}>Description *</label>
+                  <button
+                    type="button"
+                    onClick={handleGenerateDescription}
+                    disabled={generatingDescription || !courseData.title.trim()}
+                    title={!courseData.title.trim() ? 'Type a course title first' : 'Generate a description with AI'}
+                    style={{
+                      padding: '0.35rem 0.75rem',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      background: 'var(--accent-light)',
+                      color: '#6c5ce7',
+                      border: '1px solid transparent',
+                      borderRadius: '8px',
+                      cursor: generatingDescription || !courseData.title.trim() ? 'not-allowed' : 'pointer',
+                      opacity: generatingDescription || !courseData.title.trim() ? 0.55 : 1,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      transition: 'opacity 0.15s',
+                    }}
+                  >
+                    {generatingDescription ? '✨ Generating…' : '✨ Generate with AI'}
+                  </button>
+                </div>
+
                 <textarea
                   name="description"
                   value={courseData.description}
                   onChange={handleChange}
                   rows={5}
                   maxLength={500}
-                  placeholder="Describe what students will learn in this course..."
+                  placeholder="Describe what students will learn, who it's for, and what makes it special…"
                   style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    background: 'var(--bg-input)',
-                    border: `1px solid ${errors.description ? 'var(--error)' : 'var(--border-input)'}`,
-                    borderRadius: '8px',
-                    fontSize: '1rem',
-                    color: 'var(--text-primary)',
-                    outline: 'none',
+                    ...input,
                     fontFamily: 'inherit',
-                    resize: 'vertical'
+                    resize: 'vertical',
+                    borderColor: errors.description ? 'var(--error)' : 'var(--border-input)',
                   }}
                 />
-                {errors.description && (
-                  <div style={{ color: 'var(--error)', fontSize: '0.8rem', marginTop: '0.25rem' }}>
-                    {errors.description}
-                  </div>
-                )}
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', textAlign: 'right' }}>
-                  {courseData.description.length}/500
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.35rem' }}>
+                  {errors.description
+                    ? <span style={{ color: 'var(--error)', fontSize: '0.78rem' }}>{errors.description}</span>
+                    : <span />}
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{courseData.description.length}/500</span>
                 </div>
               </div>
 
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '1rem'
-              }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: '1rem' }}>
                 <div>
-                  <label style={{
-                    display: 'block',
-                    marginBottom: '0.5rem',
-                    fontWeight: '500',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.9rem'
-                  }}>
-                    Category
-                  </label>
-                  <select
-                    name="category"
-                    value={courseData.category}
-                    onChange={handleChange}
-                    style={{
-                      width: '100%',
-                      padding: '0.75rem',
-                      background: 'var(--bg-input)',
-                      border: '1px solid var(--border-input)',
-                      borderRadius: '8px',
-                      fontSize: '1rem',
-                      color: 'var(--text-primary)',
-                      outline: 'none',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {CATEGORIES.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
+                  <label style={label}>Category</label>
+                  <select name="category" value={courseData.category} onChange={handleChange} style={{ ...input, cursor: 'pointer' }}>
+                    {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
-
                 <div>
-                  <label style={{
-                    display: 'block',
-                    marginBottom: '0.5rem',
-                    fontWeight: '500',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.9rem'
-                  }}>
-                    Difficulty Level
-                  </label>
-                  <select
-                    name="difficultyLevel"
-                    value={courseData.difficultyLevel}
-                    onChange={handleChange}
-                    style={{
-                      width: '100%',
-                      padding: '0.75rem',
-                      background: 'var(--bg-input)',
-                      border: '1px solid var(--border-input)',
-                      borderRadius: '8px',
-                      fontSize: '1rem',
-                      color: 'var(--text-primary)',
-                      outline: 'none',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {LEVELS.map(lvl => (
-                      <option key={lvl} value={lvl}>{lvl}</option>
-                    ))}
+                  <label style={label}>Difficulty Level</label>
+                  <select name="difficultyLevel" value={courseData.difficultyLevel} onChange={handleChange} style={{ ...input, cursor: 'pointer' }}>
+                    {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
                   </select>
                 </div>
               </div>
             </div>
           )}
 
-          {/* ══════════ STEP 2: DETAILS ══════════ */}
+          {/* STEP 2 — DETAILS */}
           {step === 2 && (
             <div>
-              <h2 style={{
-                fontSize: '1.2rem',
-                color: 'var(--text-primary)',
-                marginBottom: '0.5rem'
-              }}>
-                Course details
-              </h2>
-              <p style={{
-                color: 'var(--text-tertiary)',
-                fontSize: '0.9rem',
-                marginBottom: '1.5rem'
-              }}>
-                Help students understand what to expect before enrolling.
-              </p>
+              <SectionHeading title="Course details" subtitle="Help students understand what to expect before enrolling." />
 
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr 1fr',
-                gap: '1rem',
-                marginBottom: '1.25rem'
-              }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
                 <div>
-                  <label style={{
-                    display: 'block',
-                    marginBottom: '0.5rem',
-                    fontWeight: '500',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.9rem'
-                  }}>
-                    Duration
-                  </label>
-                  <input
-                    type="text"
-                    name="duration"
-                    value={courseData.duration}
-                    onChange={handleChange}
-                    placeholder="10 hours"
-                    style={{
-                      width: '100%',
-                      padding: '0.75rem',
-                      background: 'var(--bg-input)',
-                      border: '1px solid var(--border-input)',
-                      borderRadius: '8px',
-                      fontSize: '1rem',
-                      color: 'var(--text-primary)',
-                      outline: 'none'
-                    }}
-                  />
+                  <label style={label}>Duration</label>
+                  <input type="text" name="duration" value={courseData.duration} onChange={handleChange} placeholder="10 hours" style={input} />
                 </div>
-
                 <div>
-                  <label style={{
-                    display: 'block',
-                    marginBottom: '0.5rem',
-                    fontWeight: '500',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.9rem'
-                  }}>
-                    Price (USD)
-                  </label>
-                  <input
-                    type="number"
-                    name="price"
-                    value={courseData.price}
-                    onChange={handleChange}
-                    min="0"
-                    step="1"
-                    style={{
-                      width: '100%',
-                      padding: '0.75rem',
-                      background: 'var(--bg-input)',
-                      border: '1px solid var(--border-input)',
-                      borderRadius: '8px',
-                      fontSize: '1rem',
-                      color: 'var(--text-primary)',
-                      outline: 'none'
-                    }}
-                  />
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                    Set 0 for free course
-                  </div>
+                  <label style={label}>Price (USD)</label>
+                  <input type="number" name="price" value={courseData.price} onChange={handleChange} min="0" step="1" style={input} />
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>Set 0 for a free course</div>
                 </div>
-
                 <div>
-                  <label style={{
-                    display: 'block',
-                    marginBottom: '0.5rem',
-                    fontWeight: '500',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.9rem'
-                  }}>
-                    Language
-                  </label>
-                  <select
-                    name="language"
-                    value={courseData.language}
-                    onChange={handleChange}
-                    style={{
-                      width: '100%',
-                      padding: '0.75rem',
-                      background: 'var(--bg-input)',
-                      border: '1px solid var(--border-input)',
-                      borderRadius: '8px',
-                      fontSize: '1rem',
-                      color: 'var(--text-primary)',
-                      outline: 'none',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {LANGUAGES.map(lang => (
-                      <option key={lang} value={lang}>{lang}</option>
-                    ))}
+                  <label style={label}>Language</label>
+                  <select name="language" value={courseData.language} onChange={handleChange} style={{ ...input, cursor: 'pointer' }}>
+                    {LANGUAGES.map((l) => <option key={l} value={l}>{l}</option>)}
                   </select>
                 </div>
               </div>
 
-              <div style={{ marginBottom: '1.25rem' }}>
-                <label style={{
-                  display: 'block',
-                  marginBottom: '0.5rem',
-                  fontWeight: '500',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.9rem'
-                }}>
-                  Prerequisites
-                </label>
+              <div style={fieldset}>
+                <label style={label}>Prerequisites</label>
                 <textarea
                   name="prerequisites"
                   value={courseData.prerequisites}
                   onChange={handleChange}
                   rows={2}
                   placeholder="What should students know before taking this course?"
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    background: 'var(--bg-input)',
-                    border: '1px solid var(--border-input)',
-                    borderRadius: '8px',
-                    fontSize: '1rem',
-                    color: 'var(--text-primary)',
-                    outline: 'none',
-                    fontFamily: 'inherit',
-                    resize: 'vertical'
-                  }}
+                  style={{ ...input, fontFamily: 'inherit', resize: 'vertical' }}
                 />
               </div>
 
-              <div style={{ marginBottom: '1.25rem' }}>
-                <label style={{
-                  display: 'block',
-                  marginBottom: '0.5rem',
-                  fontWeight: '500',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.9rem'
-                }}>
-                  Learning Outcomes
-                </label>
+              <div style={fieldset}>
+                <label style={label}>Learning Outcomes</label>
                 <textarea
                   name="learningOutcomes"
                   value={courseData.learningOutcomes}
                   onChange={handleChange}
                   rows={3}
                   placeholder="What will students be able to do after completing this course?"
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    background: 'var(--bg-input)',
-                    border: '1px solid var(--border-input)',
-                    borderRadius: '8px',
-                    fontSize: '1rem',
-                    color: 'var(--text-primary)',
-                    outline: 'none',
-                    fontFamily: 'inherit',
-                    resize: 'vertical'
-                  }}
+                  style={{ ...input, fontFamily: 'inherit', resize: 'vertical' }}
                 />
               </div>
             </div>
           )}
 
-          {/* ══════════ STEP 3: THUMBNAIL ══════════ */}
+          {/* STEP 3 — THUMBNAIL */}
           {step === 3 && (
             <div>
-              <h2 style={{
-                fontSize: '1.2rem',
-                color: 'var(--text-primary)',
-                marginBottom: '0.5rem'
-              }}>
-                Course thumbnail
-              </h2>
-              <p style={{
-                color: 'var(--text-tertiary)',
-                fontSize: '0.9rem',
-                marginBottom: '1.5rem'
-              }}>
-                Upload an eye-catching cover image. Recommended: 1280×720px, max 2MB.
-              </p>
+              <SectionHeading title="Course thumbnail" subtitle="Add a striking cover image. Recommended 1280×720px, max 2MB." />
 
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '2rem',
-                alignItems: 'start'
-              }}>
-                {/* Upload area */}
+              <div
+                style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.1fr) minmax(0, 1fr)', gap: '2rem', alignItems: 'start' }}
+                className="thumb-grid"
+              >
+                {/* Left: drop zone / preview */}
                 <div>
-                  <label
-                    htmlFor="thumbnail-upload"
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: '3rem 1.5rem',
-                      background: 'var(--bg-secondary)',
-                      border: '2px dashed var(--border-input)',
-                      borderRadius: '12px',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      textAlign: 'center'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = '#6c5ce7';
-                      e.currentTarget.style.background = 'var(--bg-hover)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = 'var(--border-input)';
-                      e.currentTarget.style.background = 'var(--bg-secondary)';
-                    }}
-                  >
-                    <div style={{ fontSize: '3rem', marginBottom: '0.75rem' }}>📤</div>
-                    <div style={{
-                      fontSize: '0.95rem',
-                      fontWeight: '600',
-                      color: 'var(--text-primary)',
-                      marginBottom: '0.25rem'
-                    }}>
-                      Click to upload
-                    </div>
-                    <div style={{
-                      fontSize: '0.8rem',
-                      color: 'var(--text-tertiary)'
-                    }}>
-                      PNG, JPG, JPEG, or GIF (max 2MB)
-                    </div>
-                    <input
-                      id="thumbnail-upload"
-                      type="file"
-                      accept="image/*"
-                      onChange={handleImageUpload}
-                      style={{ display: 'none' }}
-                    />
-                  </label>
-
-                  {courseData.imageUrl && (
-                    <button
-                      onClick={() => setCourseData({ ...courseData, imageUrl: '' })}
+                  {!courseData.imageUrl ? (
+                    <div
+                      onClick={() => fileInputRef.current?.click()}
+                      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                      onDragLeave={() => setDragOver(false)}
+                      onDrop={handleDrop}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === 'Enter') fileInputRef.current?.click(); }}
                       style={{
-                        marginTop: '1rem',
-                        padding: '0.5rem 1rem',
-                        background: 'transparent',
-                        border: '1px solid var(--error)',
-                        color: 'var(--error)',
-                        borderRadius: '8px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '3rem 1.5rem',
+                        background: dragOver ? 'var(--accent-light)' : 'var(--bg-secondary)',
+                        border: `2px dashed ${dragOver ? '#6c5ce7' : 'var(--border-input)'}`,
+                        borderRadius: '16px',
                         cursor: 'pointer',
-                        fontSize: '0.85rem'
+                        textAlign: 'center',
+                        transition: 'all 0.15s',
                       }}
                     >
-                      🗑️ Remove image
-                    </button>
+                      <div style={{
+                        width: '64px',
+                        height: '64px',
+                        borderRadius: '50%',
+                        background: 'var(--accent-light)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '1.8rem',
+                        marginBottom: '0.85rem',
+                      }}>
+                        🖼️
+                      </div>
+                      <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.25rem' }}>
+                        {dragOver ? 'Drop to upload' : 'Drag & drop an image'}
+                      </div>
+                      <div style={{ fontSize: '0.85rem', color: 'var(--text-tertiary)', marginBottom: '1rem' }}>
+                        or click to browse your files
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        PNG · JPG · JPEG · GIF — max 2MB
+                      </div>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        style={{ display: 'none' }}
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{
+                        position: 'relative',
+                        width: '100%',
+                        aspectRatio: '16 / 9',
+                        borderRadius: '16px',
+                        overflow: 'hidden',
+                        border: '1px solid var(--border-primary)',
+                        background: 'var(--bg-secondary)',
+                      }}>
+                        <img
+                          src={courseData.imageUrl}
+                          alt="Course thumbnail"
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                        />
+                        <button
+                          onClick={() => setCourseData({ ...courseData, imageUrl: '' })}
+                          title="Remove image"
+                          style={{
+                            position: 'absolute',
+                            top: '10px',
+                            right: '10px',
+                            width: '32px',
+                            height: '32px',
+                            borderRadius: '50%',
+                            background: 'rgba(0,0,0,0.65)',
+                            color: 'white',
+                            border: 'none',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '0.9rem',
+                            backdropFilter: 'blur(6px)',
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.85rem', flexWrap: 'wrap' }}>
+                        <button onClick={() => fileInputRef.current?.click()} style={btnGhost}>
+                          🔄 Replace
+                        </button>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleImageUpload}
+                          style={{ display: 'none' }}
+                        />
+                      </div>
+                    </div>
                   )}
                 </div>
 
-                {/* Preview */}
+                {/* Right: live preview card */}
                 <div>
                   <div style={{
-                    fontSize: '0.85rem',
-                    fontWeight: '500',
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
                     color: 'var(--text-tertiary)',
-                    marginBottom: '0.5rem',
                     textTransform: 'uppercase',
-                    letterSpacing: '0.05em'
+                    letterSpacing: '0.08em',
+                    marginBottom: '0.6rem',
                   }}>
-                    Preview
+                    Course card preview
                   </div>
+
                   <div style={{
-                    width: '100%',
-                    aspectRatio: '16/9',
-                    background: 'var(--bg-secondary)',
+                    padding: '1rem',
+                    background: 'var(--bg-card)',
                     border: '1px solid var(--border-primary)',
-                    borderRadius: '12px',
-                    overflow: 'hidden',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
+                    borderRadius: '14px',
+                    boxShadow: 'var(--shadow-sm)',
                   }}>
-                    {courseData.imageUrl ? (
-                      <img
-                        src={courseData.imageUrl}
-                        alt="Course thumbnail preview"
-                        style={{
-                          width: '100%',
-                          height: '100%',
-                          objectFit: 'cover'
-                        }}
-                      />
-                    ) : (
-                      <div style={{
-                        textAlign: 'center',
-                        color: 'var(--text-muted)',
-                        padding: '1rem'
-                      }}>
-                        <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>🖼️</div>
-                        <div style={{ fontSize: '0.85rem' }}>No image yet</div>
-                      </div>
-                    )}
+                    <div style={{
+                      width: '100%',
+                      aspectRatio: '16 / 9',
+                      borderRadius: '10px',
+                      overflow: 'hidden',
+                      background: courseData.imageUrl ? 'transparent' : 'linear-gradient(135deg, #6c5ce7, #a29bfe)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'white',
+                      fontSize: '2.5rem',
+                      marginBottom: '0.75rem',
+                    }}>
+                      {courseData.imageUrl ? (
+                        <img src={courseData.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        '📚'
+                      )}
+                    </div>
+
+                    <div style={{
+                      fontSize: '0.9rem',
+                      fontWeight: 700,
+                      color: 'var(--text-primary)',
+                      marginBottom: '0.35rem',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {courseData.title || 'Your course title'}
+                    </div>
+                    <div style={{
+                      fontSize: '0.78rem',
+                      color: 'var(--text-tertiary)',
+                      marginBottom: '0.6rem',
+                      overflow: 'hidden',
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                    }}>
+                      {courseData.description || 'Short description will appear here…'}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', fontSize: '0.72rem' }}>
+                      <span style={chip}>📁 {courseData.category}</span>
+                      <span style={chip}>📊 {courseData.difficultyLevel}</span>
+                      <span style={chip}>💰 {courseData.price === 0 ? 'Free' : `$${courseData.price}`}</span>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* ══════════ STEP 4: MODULES ══════════ */}
+          {/* STEP 4 — CURRICULUM */}
           {step === 4 && (
             <div>
-              <h2 style={{
-                fontSize: '1.2rem',
-                color: 'var(--text-primary)',
-                marginBottom: '0.5rem'
-              }}>
-                Course content
-              </h2>
-              <p style={{
-                color: 'var(--text-tertiary)',
-                fontSize: '0.9rem',
-                marginBottom: '1.5rem'
-              }}>
-                Organize your course into modules. Add lessons to each module.
-              </p>
+              <SectionHeading title="Build your curriculum" subtitle="Organize lessons into modules. Students will see this as their course outline." />
 
-              {/* Add Module Form */}
               <div style={{
                 padding: '1.25rem',
                 background: 'var(--bg-secondary)',
-                borderRadius: '12px',
+                borderRadius: '14px',
                 border: '1px solid var(--border-primary)',
-                marginBottom: '1.5rem'
+                marginBottom: '1.5rem',
               }}>
-                <h3 style={{
-                  fontSize: '1rem',
-                  color: 'var(--text-primary)',
-                  marginBottom: '1rem',
-                  fontWeight: '600'
-                }}>
-                  ➕ Add a new module
-                </h3>
+                <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.85rem' }}>
+                  ➕ New Module
+                </div>
                 <input
                   type="text"
                   value={newModuleTitle}
                   onChange={(e) => setNewModuleTitle(e.target.value)}
-                  placeholder="Module title (e.g., Introduction)"
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    background: 'var(--bg-input)',
-                    border: '1px solid var(--border-input)',
-                    borderRadius: '8px',
-                    fontSize: '1rem',
-                    color: 'var(--text-primary)',
-                    outline: 'none',
-                    marginBottom: '0.75rem'
-                  }}
+                  placeholder="Module title, e.g., Getting Started"
+                  style={{ ...input, marginBottom: '0.6rem' }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddModule(); }}
                 />
                 <input
                   type="text"
                   value={newModuleDesc}
                   onChange={(e) => setNewModuleDesc(e.target.value)}
-                  placeholder="Short description (optional)"
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    background: 'var(--bg-input)',
-                    border: '1px solid var(--border-input)',
-                    borderRadius: '8px',
-                    fontSize: '1rem',
-                    color: 'var(--text-primary)',
-                    outline: 'none',
-                    marginBottom: '1rem'
-                  }}
+                  placeholder="Optional short description"
+                  style={{ ...input, marginBottom: '0.9rem' }}
                 />
                 <button
                   onClick={handleAddModule}
                   disabled={saving}
-                  style={{
-                    padding: '0.6rem 1.5rem',
-                    background: '#6c5ce7',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: saving ? 'not-allowed' : 'pointer',
-                    fontWeight: '500',
-                    fontSize: '0.9rem',
-                    opacity: saving ? 0.7 : 1
-                  }}
+                  style={{ ...btnPrimary, opacity: saving ? 0.7 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}
                 >
-                  {saving ? 'Adding...' : 'Add Module'}
+                  {saving ? 'Adding…' : '+ Add Module'}
                 </button>
               </div>
 
-              {/* Modules List */}
               {modules.length === 0 ? (
                 <div style={{
-                  padding: '3rem',
+                  padding: '3rem 1.5rem',
                   textAlign: 'center',
                   background: 'var(--bg-secondary)',
-                  borderRadius: '12px',
+                  borderRadius: '16px',
                   border: '2px dashed var(--border-primary)',
-                  color: 'var(--text-tertiary)'
+                  color: 'var(--text-tertiary)',
                 }}>
                   <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>📚</div>
-                  <p style={{ margin: 0 }}>No modules yet. Add your first module above!</p>
+                  <p style={{ margin: 0, fontSize: '0.9rem' }}>No modules yet — add your first one above.</p>
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
                   {modules.map((mod, idx) => (
-                    <div
-                      key={mod.id}
-                      style={{
-                        background: 'var(--bg-secondary)',
-                        border: '1px solid var(--border-primary)',
-                        borderRadius: '12px',
-                        overflow: 'hidden'
-                      }}
-                    >
-                      {/* Module header */}
+                    <div key={mod.id} style={{
+                      background: 'var(--bg-secondary)',
+                      border: '1px solid var(--border-primary)',
+                      borderRadius: '14px',
+                      overflow: 'hidden',
+                    }}>
                       <div style={{
-                        padding: '1rem 1.25rem',
+                        padding: '0.85rem 1.1rem',
                         background: 'var(--bg-tertiary)',
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
-                        gap: '1rem',
-                        flexWrap: 'wrap'
+                        gap: '0.85rem',
+                        flexWrap: 'wrap',
                       }}>
-                        <div style={{ flex: 1, minWidth: '200px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, minWidth: '200px' }}>
                           <div style={{
-                            fontSize: '0.7rem',
-                            color: 'var(--text-tertiary)',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.05em',
-                            marginBottom: '0.25rem'
+                            width: '32px',
+                            height: '32px',
+                            borderRadius: '10px',
+                            background: 'var(--accent-light)',
+                            color: '#6c5ce7',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 700,
+                            fontSize: '0.85rem',
+                            flexShrink: 0,
                           }}>
-                            Module {idx + 1}
+                            {idx + 1}
                           </div>
-                          <div style={{
-                            fontSize: '1rem',
-                            fontWeight: '600',
-                            color: 'var(--text-primary)'
-                          }}>
-                            {mod.title}
-                          </div>
-                          {mod.description && (
-                            <div style={{
-                              fontSize: '0.85rem',
-                              color: 'var(--text-tertiary)',
-                              marginTop: '0.15rem'
-                            }}>
-                              {mod.description}
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                              {mod.title}
                             </div>
-                          )}
+                            {mod.description && (
+                              <div style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)', marginTop: '0.1rem' }}>
+                                {mod.description}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                          <span style={{
-                            fontSize: '0.75rem',
-                            color: 'var(--text-tertiary)',
-                            padding: '0.25rem 0.6rem',
-                            background: 'var(--bg-card)',
-                            borderRadius: '12px'
-                          }}>
-                            {mod.lessons?.length || 0} lessons
-                          </span>
+                        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                          <span style={chip}>{mod.lessons?.length || 0} lessons</span>
                           <button
                             onClick={() => {
                               setAddingLessonTo(addingLessonTo === mod.id ? null : mod.id);
                               setNewLessonTitle('');
                             }}
-                            style={{
-                              padding: '0.4rem 0.9rem',
-                              background: '#6c5ce7',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '6px',
-                              cursor: 'pointer',
-                              fontSize: '0.8rem',
-                              fontWeight: '500'
-                            }}
+                            style={btnPrimarySm}
                           >
                             + Lesson
                           </button>
-                          <button
-                            onClick={() => handleDeleteModule(mod.id)}
-                            style={{
-                              padding: '0.4rem 0.6rem',
-                              background: 'transparent',
-                              color: 'var(--error)',
-                              border: '1px solid var(--error)',
-                              borderRadius: '6px',
-                              cursor: 'pointer',
-                              fontSize: '0.8rem'
-                            }}
-                            title="Delete module"
-                          >
+                          <button onClick={() => handleDeleteModule(mod.id)} style={btnDangerSm} title="Delete module">
                             🗑️
                           </button>
                         </div>
                       </div>
 
-                      {/* Lessons list */}
-                      <div style={{ padding: '0.75rem 1.25rem 1rem' }}>
+                      <div style={{ padding: '0.75rem 1.1rem 1rem' }}>
                         {(mod.lessons || []).length === 0 ? (
-                          <div style={{
-                            padding: '1rem 0',
-                            textAlign: 'center',
-                            color: 'var(--text-muted)',
-                            fontSize: '0.85rem'
-                          }}>
+                          <div style={{ padding: '0.75rem 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
                             No lessons yet
                           </div>
                         ) : (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                             {mod.lessons.map((lesson, li) => (
-                              <div
-                                key={lesson.id}
-                                style={{
-                                  padding: '0.6rem 0.75rem',
-                                  background: 'var(--bg-card)',
-                                  borderRadius: '8px',
-                                  border: '1px solid var(--border-primary)',
-                                  display: 'flex',
-                                  justifyContent: 'space-between',
-                                  alignItems: 'center',
-                                  gap: '0.75rem'
-                                }}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, minWidth: 0 }}>
+                              <div key={lesson.id} style={{
+                                padding: '0.55rem 0.75rem',
+                                background: 'var(--bg-card)',
+                                borderRadius: '8px',
+                                border: '1px solid var(--border-primary)',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                gap: '0.75rem',
+                              }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flex: 1, minWidth: 0 }}>
                                   <span style={{
-                                    width: '24px',
-                                    height: '24px',
+                                    width: '22px',
+                                    height: '22px',
                                     borderRadius: '50%',
-                                    background: '#f0eeff',
+                                    background: 'var(--accent-light)',
                                     color: '#6c5ce7',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    fontSize: '0.7rem',
-                                    fontWeight: '600',
-                                    flexShrink: 0
+                                    fontSize: '0.68rem',
+                                    fontWeight: 700,
+                                    flexShrink: 0,
                                   }}>
                                     {li + 1}
                                   </span>
-                                  <span style={{
-                                    fontSize: '0.9rem',
-                                    color: 'var(--text-primary)',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap'
-                                  }}>
+                                  <span style={{ fontSize: '0.88rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                     {lesson.title}
                                   </span>
-                                  <span style={{
-                                    fontSize: '0.75rem',
-                                    color: 'var(--text-muted)',
-                                    whiteSpace: 'nowrap'
-                                  }}>
+                                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                                     {lesson.duration}
                                   </span>
                                 </div>
                                 <button
                                   onClick={() => handleDeleteLesson(mod.id, lesson.id)}
-                                  style={{
-                                    padding: '0.25rem 0.5rem',
-                                    background: 'transparent',
-                                    color: 'var(--error)',
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                    fontSize: '0.9rem',
-                                    flexShrink: 0
-                                  }}
+                                  style={{ background: 'transparent', color: 'var(--error)', border: 'none', cursor: 'pointer', fontSize: '0.9rem', flexShrink: 0 }}
                                   title="Delete lesson"
                                 >
                                   ✕
@@ -1202,14 +974,13 @@ function CreateCourse() {
                           </div>
                         )}
 
-                        {/* Add lesson form (when active) */}
                         {addingLessonTo === mod.id && (
                           <div style={{
                             marginTop: '0.75rem',
                             padding: '0.75rem',
                             background: 'var(--bg-card)',
-                            borderRadius: '8px',
-                            border: '1px solid #6c5ce7'
+                            borderRadius: '10px',
+                            border: '1px solid #6c5ce7',
                           }}>
                             <input
                               type="text"
@@ -1217,69 +988,21 @@ function CreateCourse() {
                               onChange={(e) => setNewLessonTitle(e.target.value)}
                               placeholder="Lesson title"
                               autoFocus
-                              style={{
-                                width: '100%',
-                                padding: '0.6rem',
-                                background: 'var(--bg-input)',
-                                border: '1px solid var(--border-input)',
-                                borderRadius: '6px',
-                                fontSize: '0.9rem',
-                                color: 'var(--text-primary)',
-                                outline: 'none',
-                                marginBottom: '0.5rem'
-                              }}
-                              onKeyPress={(e) => {
-                                if (e.key === 'Enter') handleAddLesson(mod.id);
-                              }}
+                              style={{ ...input, marginBottom: '0.5rem' }}
+                              onKeyDown={(e) => { if (e.key === 'Enter') handleAddLesson(mod.id); }}
                             />
-                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                               <input
                                 type="text"
                                 value={newLessonDuration}
                                 onChange={(e) => setNewLessonDuration(e.target.value)}
                                 placeholder="10 min"
-                                style={{
-                                  flex: 1,
-                                  padding: '0.6rem',
-                                  background: 'var(--bg-input)',
-                                  border: '1px solid var(--border-input)',
-                                  borderRadius: '6px',
-                                  fontSize: '0.9rem',
-                                  color: 'var(--text-primary)',
-                                  outline: 'none'
-                                }}
+                                style={{ ...input, flex: 1, minWidth: '120px' }}
                               />
-                              <button
-                                onClick={() => handleAddLesson(mod.id)}
-                                disabled={saving}
-                                style={{
-                                  padding: '0.6rem 1.2rem',
-                                  background: '#6c5ce7',
-                                  color: 'white',
-                                  border: 'none',
-                                  borderRadius: '6px',
-                                  cursor: saving ? 'not-allowed' : 'pointer',
-                                  fontSize: '0.85rem',
-                                  fontWeight: '500',
-                                  opacity: saving ? 0.7 : 1
-                                }}
-                              >
-                                {saving ? '...' : 'Add'}
+                              <button onClick={() => handleAddLesson(mod.id)} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.7 : 1 }}>
+                                {saving ? '…' : 'Add'}
                               </button>
-                              <button
-                                onClick={() => setAddingLessonTo(null)}
-                                style={{
-                                  padding: '0.6rem 0.9rem',
-                                  background: 'transparent',
-                                  color: 'var(--text-tertiary)',
-                                  border: '1px solid var(--border-input)',
-                                  borderRadius: '6px',
-                                  cursor: 'pointer',
-                                  fontSize: '0.85rem'
-                                }}
-                              >
-                                Cancel
-                              </button>
+                              <button onClick={() => setAddingLessonTo(null)} style={btnGhost}>Cancel</button>
                             </div>
                           </div>
                         )}
@@ -1289,214 +1012,118 @@ function CreateCourse() {
                 </div>
               )}
 
-              {/* Summary */}
               {modules.length > 0 && (
                 <div style={{
-                  marginTop: '1.5rem',
-                  padding: '1rem 1.25rem',
-                  background: '#f0eeff',
+                  marginTop: '1.25rem',
+                  padding: '0.9rem 1.1rem',
+                  background: 'var(--accent-light)',
                   borderRadius: '12px',
                   display: 'flex',
                   gap: '1.5rem',
                   flexWrap: 'wrap',
-                  fontSize: '0.9rem'
+                  fontSize: '0.88rem',
+                  fontWeight: 600,
+                  color: '#6c5ce7',
                 }}>
-                  <span style={{ color: '#6c5ce7', fontWeight: '600' }}>
-                    📚 {modules.length} modules
-                  </span>
-                  <span style={{ color: '#6c5ce7', fontWeight: '600' }}>
-                    🎬 {totalLessons} lessons
-                  </span>
+                  <span>📚 {modules.length} modules</span>
+                  <span>🎬 {totalLessons} lessons</span>
                 </div>
               )}
             </div>
           )}
 
-          {/* ══════════ STEP 5: REVIEW & PUBLISH ══════════ */}
+          {/* STEP 5 — PUBLISH */}
           {step === 5 && (
             <div>
-              <h2 style={{
-                fontSize: '1.2rem',
-                color: 'var(--text-primary)',
-                marginBottom: '0.5rem'
-              }}>
-                Review & publish
-              </h2>
-              <p style={{
-                color: 'var(--text-tertiary)',
-                fontSize: '0.9rem',
-                marginBottom: '1.5rem'
-              }}>
-                Make sure everything looks good before publishing your course.
-              </p>
+              <SectionHeading title="Review & publish" subtitle="One last look before your course goes live." />
 
-              {/* Course preview card */}
               <div style={{
                 padding: '1.5rem',
                 background: 'var(--bg-secondary)',
                 borderRadius: '16px',
                 border: '1px solid var(--border-primary)',
-                marginBottom: '1.5rem'
+                marginBottom: '1.5rem',
               }}>
-                <div style={{
-                  display: 'flex',
-                  gap: '1.25rem',
-                  flexWrap: 'wrap',
-                  marginBottom: '1.25rem'
-                }}>
-                  {/* Thumbnail */}
+                <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
                   <div style={{
-                    width: '160px',
-                    height: '90px',
-                    borderRadius: '10px',
+                    width: '180px',
+                    height: '101px',
+                    borderRadius: '12px',
                     background: courseData.imageUrl ? 'transparent' : 'linear-gradient(135deg, #6c5ce7, #a29bfe)',
                     overflow: 'hidden',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     color: 'white',
-                    fontSize: '2rem',
-                    flexShrink: 0
+                    fontSize: '2.2rem',
+                    flexShrink: 0,
                   }}>
                     {courseData.imageUrl ? (
-                      <img
-                        src={courseData.imageUrl}
-                        alt="thumbnail"
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                      />
+                      <img src={courseData.imageUrl} alt="thumbnail" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     ) : (
                       '📚'
                     )}
                   </div>
 
-                  {/* Info */}
                   <div style={{ flex: 1, minWidth: '200px' }}>
-                    <h3 style={{
-                      fontSize: '1.2rem',
-                      color: 'var(--text-primary)',
-                      marginBottom: '0.5rem'
-                    }}>
-                      {courseData.title}
+                    <h3 style={{ fontSize: '1.15rem', color: 'var(--text-primary)', margin: '0 0 0.4rem', fontWeight: 700 }}>
+                      {courseData.title || 'Untitled course'}
                     </h3>
-                    <p style={{
-                      fontSize: '0.9rem',
-                      color: 'var(--text-secondary)',
-                      marginBottom: '0.75rem'
-                    }}>
-                      {courseData.description?.substring(0, 150)}...
+                    <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', margin: '0 0 0.75rem', lineHeight: 1.5 }}>
+                      {courseData.description?.substring(0, 150)}…
                     </p>
-                    <div style={{
-                      display: 'flex',
-                      gap: '1rem',
-                      flexWrap: 'wrap',
-                      fontSize: '0.85rem',
-                      color: 'var(--text-tertiary)'
-                    }}>
-                      <span>📁 {courseData.category}</span>
-                      <span>📊 {courseData.difficultyLevel}</span>
-                      <span>⏱️ {courseData.duration}</span>
-                      <span>💰 {courseData.price === 0 ? 'Free' : `$${courseData.price}`}</span>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', fontSize: '0.75rem' }}>
+                      <span style={chip}>📁 {courseData.category}</span>
+                      <span style={chip}>📊 {courseData.difficultyLevel}</span>
+                      <span style={chip}>⏱️ {courseData.duration}</span>
+                      <span style={chip}>💰 {courseData.price === 0 ? 'Free' : `$${courseData.price}`}</span>
                     </div>
                   </div>
                 </div>
 
-                {/* Stats */}
                 <div style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(2, 1fr)',
                   gap: '0.75rem',
                   paddingTop: '1.25rem',
-                  borderTop: '1px solid var(--border-primary)'
+                  borderTop: '1px solid var(--border-primary)',
                 }}>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#6c5ce7' }}>
-                      {modules.length}
-                    </div>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>
-                      Modules
-                    </div>
-                  </div>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#6c5ce7' }}>
-                      {totalLessons}
-                    </div>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>
-                      Lessons
-                    </div>
-                  </div>
+                  <Stat label="Modules" value={modules.length} />
+                  <Stat label="Lessons" value={totalLessons} />
                 </div>
               </div>
 
-              {/* Checklist */}
               <div style={{
                 padding: '1.25rem',
                 background: 'var(--bg-secondary)',
-                borderRadius: '12px',
+                borderRadius: '14px',
                 border: '1px solid var(--border-primary)',
-                marginBottom: '1.5rem'
               }}>
-                <h3 style={{
-                  fontSize: '0.95rem',
-                  fontWeight: '600',
-                  color: 'var(--text-primary)',
-                  marginBottom: '0.75rem'
-                }}>
-                  ✅ Pre-publish checklist
-                </h3>
-                <ul style={{
-                  listStyle: 'none',
-                  padding: 0,
-                  margin: 0,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.5rem'
-                }}>
-                  <li style={{
-                    fontSize: '0.9rem',
-                    color: courseData.title ? 'var(--success)' : 'var(--text-tertiary)'
-                  }}>
-                    {courseData.title ? '✅' : '⬜'} Course has a title
-                  </li>
-                  <li style={{
-                    fontSize: '0.9rem',
-                    color: courseData.description ? 'var(--success)' : 'var(--text-tertiary)'
-                  }}>
-                    {courseData.description ? '✅' : '⬜'} Course has a description
-                  </li>
-                  <li style={{
-                    fontSize: '0.9rem',
-                    color: courseData.imageUrl ? 'var(--success)' : 'var(--text-tertiary)'
-                  }}>
-                    {courseData.imageUrl ? '✅' : '⬜'} Course has a thumbnail
-                  </li>
-                  <li style={{
-                    fontSize: '0.9rem',
-                    color: modules.length > 0 ? 'var(--success)' : 'var(--text-tertiary)'
-                  }}>
-                    {modules.length > 0 ? '✅' : '⬜'} At least one module added
-                  </li>
-                  <li style={{
-                    fontSize: '0.9rem',
-                    color: totalLessons > 0 ? 'var(--success)' : 'var(--text-tertiary)'
-                  }}>
-                    {totalLessons > 0 ? '✅' : '⬜'} At least one lesson added
-                  </li>
-                </ul>
+                <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.85rem' }}>
+                  Pre-publish checklist
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+                  <Check ok={!!courseData.title} label="Course has a title" />
+                  <Check ok={!!courseData.description} label="Course has a description" />
+                  <Check ok={!!courseData.imageUrl} label="Course has a thumbnail" />
+                  <Check ok={modules.length > 0} label="At least one module added" />
+                  <Check ok={totalLessons > 0} label="At least one lesson added" />
+                </div>
               </div>
             </div>
           )}
         </div>
 
-        {/* Footer with actions */}
+        {/* FOOTER */}
         <div style={{
-          padding: '1.25rem clamp(1.5rem, 3vw, 2rem)',
+          padding: '1.1rem clamp(1.5rem, 3vw, 2rem)',
           borderTop: '1px solid var(--border-primary)',
           background: 'var(--bg-secondary)',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           gap: '1rem',
-          flexWrap: 'wrap'
+          flexWrap: 'wrap',
         }}>
           <button
             onClick={goBack}
@@ -1508,9 +1135,9 @@ function CreateCourse() {
               border: '1px solid var(--border-input)',
               borderRadius: '10px',
               cursor: step === 1 ? 'not-allowed' : 'pointer',
-              fontSize: '0.95rem',
-              fontWeight: '500',
-              opacity: step === 1 ? 0.5 : 1
+              fontSize: '0.92rem',
+              fontWeight: 500,
+              opacity: step === 1 ? 0.5 : 1,
             }}
           >
             ← Back
@@ -1528,13 +1155,13 @@ function CreateCourse() {
                   border: 'none',
                   borderRadius: '10px',
                   cursor: saving ? 'not-allowed' : 'pointer',
-                  fontSize: '0.95rem',
-                  fontWeight: '600',
+                  fontSize: '0.92rem',
+                  fontWeight: 700,
                   boxShadow: '0 4px 12px rgba(108,92,231,0.3)',
-                  opacity: saving ? 0.7 : 1
+                  opacity: saving ? 0.7 : 1,
                 }}
               >
-                {saving ? 'Saving...' : 'Save & Continue →'}
+                {saving ? 'Saving…' : 'Save & Continue →'}
               </button>
             ) : (
               <button
@@ -1542,29 +1169,156 @@ function CreateCourse() {
                 disabled={loading || saving || !courseData.title || modules.length === 0 || totalLessons === 0}
                 style={{
                   padding: '0.7rem 2rem',
-                  background: (loading || saving || !courseData.title || modules.length === 0 || totalLessons === 0)
-                    ? '#a29bfe'
-                    : '#34d399',
+                  background: (loading || saving || !courseData.title || modules.length === 0 || totalLessons === 0) ? '#a29bfe' : '#34d399',
                   color: 'white',
                   border: 'none',
                   borderRadius: '10px',
-                  cursor: (loading || saving || !courseData.title || modules.length === 0 || totalLessons === 0)
-                    ? 'not-allowed'
-                    : 'pointer',
-                  fontSize: '0.95rem',
-                  fontWeight: '600',
+                  cursor: (loading || saving || !courseData.title || modules.length === 0 || totalLessons === 0) ? 'not-allowed' : 'pointer',
+                  fontSize: '0.92rem',
+                  fontWeight: 700,
                   boxShadow: '0 4px 12px rgba(52,211,153,0.3)',
-                  opacity: (loading || saving || !courseData.title || modules.length === 0 || totalLessons === 0) ? 0.6 : 1
+                  opacity: (loading || saving || !courseData.title || modules.length === 0 || totalLessons === 0) ? 0.6 : 1,
                 }}
               >
-                {loading ? 'Publishing...' : '🚀 Publish Course'}
+                {loading ? 'Publishing…' : '🚀 Publish Course'}
               </button>
             )}
           </div>
         </div>
       </div>
+
+      {/* Confirm dialog for module/lesson deletion */}
+      <ConfirmDialog
+        isOpen={!!confirmDelete}
+        title={confirmDelete?.type === 'module' ? 'Delete this module?' : 'Delete this lesson?'}
+        message={
+          confirmDelete?.type === 'module'
+            ? 'Lessons inside this module will be unassigned. This cannot be undone.'
+            : 'This lesson will be removed from your course. This cannot be undone.'
+        }
+        confirmLabel="Delete"
+        danger
+        onConfirm={performDelete}
+        onCancel={() => setConfirmDelete(null)}
+      />
+
+      <style>{`
+        @media (max-width: 720px) {
+          .thumb-grid {
+            grid-template-columns: 1fr !important;
+          }
+          .stepper-label {
+            display: none;
+          }
+        }
+      `}</style>
     </div>
   );
 }
+
+/* ─── helper components ─────────────────────────────── */
+
+function SectionHeading({ title, subtitle }) {
+  return (
+    <div style={{ marginBottom: '1.5rem' }}>
+      <h2 style={{ fontSize: '1.15rem', color: 'var(--text-primary)', margin: '0 0 0.35rem', fontWeight: 700 }}>
+        {title}
+      </h2>
+      {subtitle && (
+        <p style={{ color: 'var(--text-tertiary)', fontSize: '0.88rem', margin: 0 }}>
+          {subtitle}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function Stat({ label, value }) {
+  return (
+    <div style={{ textAlign: 'center' }}>
+      <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#6c5ce7', lineHeight: 1 }}>{value}</div>
+      <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '0.3rem' }}>{label}</div>
+    </div>
+  );
+}
+
+function Check({ ok, label }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: '0.88rem' }}>
+      <span style={{
+        width: '20px',
+        height: '20px',
+        borderRadius: '50%',
+        background: ok ? '#34d399' : 'var(--bg-tertiary)',
+        color: 'white',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '0.7rem',
+        fontWeight: 800,
+        flexShrink: 0,
+        border: ok ? 'none' : '1px solid var(--border-primary)',
+      }}>
+        {ok ? '✓' : ''}
+      </span>
+      <span style={{ color: ok ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>{label}</span>
+    </div>
+  );
+}
+
+/* ─── style helpers ─────────────────────────────────── */
+
+const chip = {
+  padding: '0.2rem 0.6rem',
+  background: 'var(--bg-card)',
+  border: '1px solid var(--border-primary)',
+  borderRadius: '20px',
+  color: 'var(--text-tertiary)',
+  fontWeight: 600,
+};
+
+const btnPrimary = {
+  padding: '0.6rem 1.25rem',
+  background: '#6c5ce7',
+  color: 'white',
+  border: 'none',
+  borderRadius: '10px',
+  cursor: 'pointer',
+  fontWeight: 600,
+  fontSize: '0.88rem',
+  boxShadow: '0 3px 10px rgba(108,92,231,0.25)',
+};
+
+const btnPrimarySm = {
+  padding: '0.35rem 0.75rem',
+  background: '#6c5ce7',
+  color: 'white',
+  border: 'none',
+  borderRadius: '8px',
+  cursor: 'pointer',
+  fontSize: '0.78rem',
+  fontWeight: 600,
+};
+
+const btnGhost = {
+  padding: '0.55rem 1.1rem',
+  background: 'transparent',
+  color: 'var(--text-secondary)',
+  border: '1px solid var(--border-input)',
+  borderRadius: '10px',
+  cursor: 'pointer',
+  fontSize: '0.85rem',
+  fontWeight: 500,
+};
+
+const btnDangerSm = {
+  padding: '0.35rem 0.6rem',
+  background: 'transparent',
+  color: 'var(--error)',
+  border: '1px solid var(--border-primary)',
+  borderRadius: '8px',
+  cursor: 'pointer',
+  fontSize: '0.85rem',
+};
 
 export default CreateCourse;

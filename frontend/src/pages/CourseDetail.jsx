@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../api/axiosConfig';
 import { getCurrentUser } from '../api/authAPI';
 import Celebration from '../components/common/Celebration';
 import InstructorCard from '../components/common/InstructorCard';
+import ConfirmDialog from '../components/common/ConfirmDialog';
+import { useToast } from '../context/ToastContext';
 
-// ✅ Helper: Check if a string is an image URL or data URI
 const isImageUrl = (url) => {
   if (!url || typeof url !== 'string') return false;
   return url.startsWith('data:image') || url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/');
@@ -14,6 +15,8 @@ const isImageUrl = (url) => {
 function CourseDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const toast = useToast();
+
   const [course, setCourse] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -29,7 +32,9 @@ function CourseDetail() {
   const [showCelebration, setShowCelebration] = useState(false);
   const [completedLessonTitle, setCompletedLessonTitle] = useState('');
   const [isCompleting, setIsCompleting] = useState(false);
+  const [confirmUnenroll, setConfirmUnenroll] = useState(false);
 
+  const enrollButtonRef = useRef(null);
   const user = getCurrentUser();
 
   useEffect(() => {
@@ -59,36 +64,54 @@ function CourseDetail() {
       navigate('/login');
       return;
     }
-
     try {
       setEnrolling(true);
       await api.post(`/courses/${id}/enroll`);
       setIsEnrolled(true);
+      toast.success('Enrolled! Happy learning 🎉');
       fetchCourseDetails();
     } catch (err) {
-      console.error('Error enrolling:', err);
-      alert('Failed to enroll. Please try again.');
+      toast.error(err.response?.data?.error || 'Failed to enroll. Please try again.');
     } finally {
       setEnrolling(false);
     }
   };
 
-  const handleUnenroll = async () => {
+  const handleUnenrollClick = () => setConfirmUnenroll(true);
+
+  const handleUnenrollConfirm = async () => {
+    setConfirmUnenroll(false);
     try {
       await api.delete(`/courses/${id}/unenroll`);
       setIsEnrolled(false);
       setProgress(0);
       setCompletedLessons(0);
+      toast.info('You have been unenrolled from this course.');
       fetchCourseDetails();
     } catch (err) {
-      console.error('Error unenrolling:', err);
-      alert('Failed to unenroll. Please try again.');
+      toast.error(err.response?.data?.error || 'Failed to unenroll.');
+    }
+  };
+
+  // ⭐ The real fix: nudge the user toward the Enroll button instead of "localhost says..."
+  const requireEnrollment = (reason) => {
+    toast.warning(reason);
+    if (enrollButtonRef.current) {
+      enrollButtonRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const btn = enrollButtonRef.current;
+      btn.style.transition = 'box-shadow 0.25s, transform 0.25s';
+      btn.style.boxShadow = '0 0 0 6px rgba(108,92,231,0.35)';
+      btn.style.transform = 'scale(1.05)';
+      setTimeout(() => {
+        btn.style.boxShadow = '';
+        btn.style.transform = '';
+      }, 900);
     }
   };
 
   const handleLessonClick = (lesson) => {
     if (!isEnrolled) {
-      alert('Please enroll in the course to access lessons.');
+      requireEnrollment('Enroll in this course to open its lessons.');
       return;
     }
     setActiveLesson(lesson);
@@ -97,7 +120,6 @@ function CourseDetail() {
 
   const toggleLessonComplete = async (lessonId) => {
     if (isCompleting) return;
-
     try {
       setIsCompleting(true);
 
@@ -111,7 +133,7 @@ function CourseDetail() {
         try {
           await api.put(`/courses/lessons/${lessonId}/progress`, {
             completed: false,
-            watchTime: 0
+            watchTime: 0,
           });
         } catch (err) {
           console.warn('API error on uncomplete:', err);
@@ -123,7 +145,9 @@ function CourseDetail() {
         setCourse({ ...course, lessons: updatedLessons });
 
         const newCompletedCount = updatedLessons.filter(l => l.isCompleted).length;
-        const newProgress = course.lessons.length > 0 ? Math.round((newCompletedCount / course.lessons.length) * 100) : 0;
+        const newProgress = course.lessons.length > 0
+          ? Math.round((newCompletedCount / course.lessons.length) * 100)
+          : 0;
         setCompletedLessons(newCompletedCount);
         setProgress(newProgress);
 
@@ -134,7 +158,7 @@ function CourseDetail() {
       try {
         const response = await api.put(`/courses/lessons/${lessonId}/progress`, {
           completed: true,
-          watchTime: 300
+          watchTime: 300,
         });
         console.log('✅ Progress update response:', response.data);
       } catch (err) {
@@ -147,37 +171,34 @@ function CourseDetail() {
       setCourse({ ...course, lessons: updatedLessons });
 
       const newCompletedCount = updatedLessons.filter(l => l.isCompleted).length;
-      const newProgress = course.lessons.length > 0 ? Math.round((newCompletedCount / course.lessons.length) * 100) : 0;
+      const newProgress = course.lessons.length > 0
+        ? Math.round((newCompletedCount / course.lessons.length) * 100)
+        : 0;
       setCompletedLessons(newCompletedCount);
       setProgress(newProgress);
 
       setCompletedLessonTitle(lesson.title);
       setShowCelebration(true);
-
     } catch (err) {
       console.error('❌ Unexpected error:', err);
-      alert('Failed to update progress. Please try again.');
+      toast.error('Failed to update progress. Please try again.');
     } finally {
       setIsCompleting(false);
     }
   };
 
-  const handleCelebrationClose = () => {
-    setShowCelebration(false);
-  };
+  const handleCelebrationClose = () => setShowCelebration(false);
 
   const handleQuizSubmit = () => {
     if (!course?.quiz?.questions) {
-      alert('No quiz available for this course yet.');
+      toast.info('No quiz available for this course yet.');
       return;
     }
 
     const questions = course.quiz.questions;
     let correct = 0;
     questions.forEach((q, index) => {
-      if (quizAnswers[index] === q.correctOption) {
-        correct++;
-      }
+      if (quizAnswers[index] === q.correctOption) correct++;
     });
     const score = Math.round((correct / questions.length) * 100);
     setQuizScore(score);
@@ -190,10 +211,7 @@ function CourseDetail() {
   };
 
   const handleQuizAnswer = (questionIndex, optionIndex) => {
-    setQuizAnswers({
-      ...quizAnswers,
-      [questionIndex]: optionIndex
-    });
+    setQuizAnswers({ ...quizAnswers, [questionIndex]: optionIndex });
   };
 
   if (loading) {
@@ -218,7 +236,7 @@ function CourseDetail() {
             color: 'white',
             border: 'none',
             borderRadius: '8px',
-            cursor: 'pointer'
+            cursor: 'pointer',
           }}>
             Back to Courses
           </button>
@@ -232,46 +250,19 @@ function CourseDetail() {
       maxWidth: '1400px',
       margin: '2rem auto',
       padding: '0 clamp(1rem, 3vw, 2rem)',
-      width: '100%'
+      width: '100%',
     }}>
-      {/* Responsive styles for course header */}
       <style>{`
-        .course-header-row {
-          display: flex;
-          flex-direction: column;
-          align-items: stretch;
-          gap: 1rem;
-        }
-        .course-header-info {
-          flex: 1;
-          min-width: 200px;
-        }
-        .course-header-action {
-          width: 100%;
-          text-align: center;
-        }
-        .course-header-action button {
-          width: 100% !important;
-        }
+        .course-header-row { display: flex; flex-direction: column; align-items: stretch; gap: 1rem; }
+        .course-header-info { flex: 1; min-width: 200px; }
+        .course-header-action { width: 100%; text-align: center; }
+        .course-header-action button { width: 100% !important; }
         @media (min-width: 768px) {
-          .course-header-row {
-            flex-direction: row;
-            justify-content: space-between;
-            align-items: flex-start;
-          }
-          .course-header-info {
-            min-width: 200px;
-          }
-          .course-header-action {
-            width: auto;
-            min-width: clamp(120px, 15vw, 150px);
-            text-align: right;
-            align-self: center;
-          }
+          .course-header-row { flex-direction: row; justify-content: space-between; align-items: flex-start; }
+          .course-header-action { width: auto; min-width: clamp(120px, 15vw, 150px); text-align: right; align-self: center; }
         }
       `}</style>
 
-      {/* Celebration Modal */}
       <Celebration
         show={showCelebration}
         onClose={handleCelebrationClose}
@@ -279,27 +270,37 @@ function CourseDetail() {
         courseTitle={course.title}
       />
 
+      <ConfirmDialog
+        isOpen={confirmUnenroll}
+        title="Unenroll from this course?"
+        message="Your progress will be kept, but you'll lose access to the lessons and quizzes until you enroll again."
+        confirmLabel="Unenroll"
+        cancelLabel="Stay enrolled"
+        danger
+        onConfirm={handleUnenrollConfirm}
+        onCancel={() => setConfirmUnenroll(false)}
+      />
+
       <Link to="/courses" style={{
         color: '#6c5ce7',
         display: 'inline-block',
         marginBottom: '1.5rem',
         textDecoration: 'none',
-        fontSize: 'clamp(0.9rem, 1.2vw, 1rem)'
+        fontSize: 'clamp(0.9rem, 1.2vw, 1rem)',
       }}>
         ← Back to Courses
       </Link>
 
-      {/* Course Header - Responsive */}
+      {/* Course Header */}
       <div style={{
         padding: 'clamp(1rem, 2vw, 2rem)',
         background: 'var(--bg-secondary)',
         borderRadius: '12px',
         border: '1px solid var(--border-primary)',
-        marginBottom: '2rem'
+        marginBottom: '2rem',
       }}>
         <div className="course-header-row">
           <div className="course-header-info">
-            {/* ✅ FIXED: Image/emoji rendering */}
             <div style={{ marginBottom: '0.75rem' }}>
               {isImageUrl(course.imageUrl) ? (
                 <img
@@ -311,7 +312,7 @@ function CourseDetail() {
                     objectFit: 'cover',
                     borderRadius: '16px',
                     boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                    display: 'block'
+                    display: 'block',
                   }}
                 />
               ) : (
@@ -326,7 +327,7 @@ function CourseDetail() {
               color: 'var(--text-primary)',
               marginBottom: '0.5rem',
               wordBreak: 'break-word',
-              marginTop: 0
+              marginTop: 0,
             }}>
               {course.title}
             </h1>
@@ -335,7 +336,7 @@ function CourseDetail() {
               maxWidth: '600px',
               fontSize: 'clamp(0.9rem, 1.2vw, 1rem)',
               lineHeight: '1.6',
-              margin: 0
+              margin: 0,
             }}>
               {course.description}
             </p>
@@ -344,7 +345,7 @@ function CourseDetail() {
               gap: 'clamp(0.5rem, 1.5vw, 1.5rem)',
               marginTop: '1rem',
               flexWrap: 'wrap',
-              fontSize: 'clamp(0.8rem, 1vw, 0.9rem)'
+              fontSize: 'clamp(0.8rem, 1vw, 0.9rem)',
             }}>
               <span style={{ color: 'var(--text-tertiary)' }}>👨‍🏫 {course.instructorName || 'Instructor'}</span>
               <span style={{ color: 'var(--text-tertiary)' }}>📚 {course.lessons?.length || 0} lessons</span>
@@ -354,7 +355,7 @@ function CourseDetail() {
                 background: 'var(--accent-light)',
                 color: '#6c5ce7',
                 borderRadius: '20px',
-                fontSize: 'clamp(0.75rem, 0.9vw, 0.85rem)'
+                fontSize: 'clamp(0.75rem, 0.9vw, 0.85rem)',
               }}>
                 {course.difficultyLevel || 'Beginner'}
               </span>
@@ -364,23 +365,20 @@ function CourseDetail() {
                   background: '#34d39920',
                   color: '#34d399',
                   borderRadius: '20px',
-                  fontSize: 'clamp(0.75rem, 0.9vw, 0.85rem)'
-                }}>
-                  Free
-                </span>
+                  fontSize: 'clamp(0.75rem, 0.9vw, 0.85rem)',
+                }}>Free</span>
               ) : (
                 <span style={{
                   padding: '0.25rem 0.75rem',
                   background: '#fbbf2420',
                   color: '#f59e0b',
                   borderRadius: '20px',
-                  fontSize: 'clamp(0.75rem, 0.9vw, 0.85rem)'
-                }}>
-                  ${course.price}
-                </span>
+                  fontSize: 'clamp(0.75rem, 0.9vw, 0.85rem)',
+                }}>${course.price}</span>
               )}
             </div>
           </div>
+
           <div className="course-header-action">
             {isEnrolled ? (
               <>
@@ -388,7 +386,7 @@ function CourseDetail() {
                   fontSize: 'clamp(1.5rem, 3vw, 2rem)',
                   fontWeight: 'bold',
                   color: progress === 100 ? '#34d399' : '#6c5ce7',
-                  marginBottom: '0.25rem'
+                  marginBottom: '0.25rem',
                 }}>
                   {progress}%
                 </div>
@@ -402,14 +400,14 @@ function CourseDetail() {
                   borderRadius: '4px',
                   height: '8px',
                   marginTop: '0.5rem',
-                  marginLeft: 'auto'
+                  marginLeft: 'auto',
                 }}>
                   <div style={{
                     background: progress === 100 ? '#34d399' : '#6c5ce7',
                     height: '100%',
                     borderRadius: '4px',
                     width: `${progress}%`,
-                    transition: 'width 0.5s ease'
+                    transition: 'width 0.5s ease',
                   }} />
                 </div>
                 {progress === 100 && (
@@ -417,13 +415,13 @@ function CourseDetail() {
                     marginTop: '0.5rem',
                     color: '#34d399',
                     fontWeight: 'bold',
-                    fontSize: 'clamp(0.8rem, 1vw, 0.9rem)'
+                    fontSize: 'clamp(0.8rem, 1vw, 0.9rem)',
                   }}>
                     🎉 Course Complete!
                   </div>
                 )}
                 <button
-                  onClick={handleUnenroll}
+                  onClick={handleUnenrollClick}
                   style={{
                     marginTop: '0.75rem',
                     padding: '0.4rem 1rem',
@@ -433,7 +431,7 @@ function CourseDetail() {
                     borderRadius: '8px',
                     cursor: 'pointer',
                     fontSize: 'clamp(0.75rem, 0.9vw, 0.85rem)',
-                    width: '100%'
+                    width: '100%',
                   }}
                 >
                   Unenroll
@@ -441,6 +439,7 @@ function CourseDetail() {
               </>
             ) : (
               <button
+                ref={enrollButtonRef}
                 onClick={handleEnroll}
                 disabled={enrolling}
                 style={{
@@ -453,7 +452,7 @@ function CourseDetail() {
                   fontSize: 'clamp(0.9rem, 1.2vw, 1rem)',
                   fontWeight: '500',
                   opacity: enrolling ? 0.7 : 1,
-                  width: '100%'
+                  width: '100%',
                 }}
               >
                 {enrolling ? 'Enrolling...' : 'Enroll Now'}
@@ -463,31 +462,31 @@ function CourseDetail() {
         </div>
       </div>
 
-      {/* ✅ NEW — About the Instructor */}
+      {/* Instructor */}
       {course.instructorId && (
         <InstructorCard instructorId={course.instructorId} variant="full" />
       )}
 
-      {/* Main Content - Responsive Grid */}
+      {/* Lessons + Quiz */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 400px), 1fr))',
         gap: 'clamp(1rem, 2vw, 2rem)',
-        marginTop: '2rem'
+        marginTop: '2rem',
       }}>
-        {/* Left Column - Lessons */}
+        {/* LEFT: Lessons list */}
         <div>
           <div style={{
             padding: 'clamp(1rem, 1.5vw, 1.5rem)',
             background: 'var(--bg-card)',
             borderRadius: '12px',
-            border: '1px solid var(--border-primary)'
+            border: '1px solid var(--border-primary)',
           }}>
             <h3 style={{
               marginBottom: '1rem',
               color: 'var(--text-primary)',
               fontSize: 'clamp(1.1rem, 1.5vw, 1.2rem)',
-              marginTop: 0
+              marginTop: 0,
             }}>
               Course Content
             </h3>
@@ -499,7 +498,7 @@ function CourseDetail() {
                 color: 'var(--text-tertiary)',
                 marginBottom: '1rem',
                 flexWrap: 'wrap',
-                gap: '0.25rem'
+                gap: '0.25rem',
               }}>
                 <span>{completedLessons} / {course.lessons?.length || 0} lessons completed</span>
                 <span>{course.duration || 'N/A'} total</span>
@@ -523,7 +522,7 @@ function CourseDetail() {
                   border: activeLesson?.id === lesson.id ? '1px solid #6c5ce7' : '1px solid transparent',
                   opacity: isEnrolled ? 1 : 0.6,
                   flexWrap: 'wrap',
-                  gap: '0.25rem'
+                  gap: '0.25rem',
                 }}
                 onMouseEnter={(e) => {
                   if (isEnrolled && activeLesson?.id !== lesson.id) {
@@ -549,10 +548,8 @@ function CourseDetail() {
                       color: 'white',
                       fontSize: 'clamp(10px, 1vw, 12px)',
                       fontWeight: 'bold',
-                      flexShrink: 0
-                    }}>
-                      ✓
-                    </span>
+                      flexShrink: 0,
+                    }}>✓</span>
                   ) : (
                     <span style={{
                       display: 'inline-flex',
@@ -565,16 +562,14 @@ function CourseDetail() {
                       color: 'var(--text-muted)',
                       fontSize: 'clamp(10px, 1vw, 12px)',
                       fontWeight: 'bold',
-                      flexShrink: 0
-                    }}>
-                      {index + 1}
-                    </span>
+                      flexShrink: 0,
+                    }}>{index + 1}</span>
                   )}
                   <span style={{
                     color: lesson.isCompleted ? '#34d399' : 'var(--text-primary)',
                     fontWeight: lesson.isCompleted ? '500' : '400',
                     fontSize: 'clamp(0.85rem, 1vw, 0.95rem)',
-                    wordBreak: 'break-word'
+                    wordBreak: 'break-word',
                   }}>
                     {lesson.title}
                   </span>
@@ -591,10 +586,8 @@ function CourseDetail() {
                       padding: '0.1rem 0.5rem',
                       borderRadius: '20px',
                       fontWeight: '500',
-                      whiteSpace: 'nowrap'
-                    }}>
-                      ✓ Done
-                    </span>
+                      whiteSpace: 'nowrap',
+                    }}>✓ Done</span>
                   )}
                   {!isEnrolled && (
                     <span style={{ fontSize: 'clamp(0.6rem, 0.7vw, 0.7rem)', color: '#fbbf24' }}>🔒</span>
@@ -606,7 +599,7 @@ function CourseDetail() {
             <button
               onClick={() => {
                 if (!isEnrolled) {
-                  alert('Please enroll in the course to take the quiz.');
+                  requireEnrollment('Enroll in this course to take the quiz.');
                   return;
                 }
                 setShowQuiz(!showQuiz);
@@ -626,7 +619,7 @@ function CourseDetail() {
                 fontWeight: '500',
                 fontSize: 'clamp(0.9rem, 1.2vw, 1rem)',
                 opacity: isEnrolled ? 1 : 0.6,
-                transition: 'all 0.3s ease'
+                transition: 'all 0.3s ease',
               }}
             >
               {showQuiz ? 'Hide Quiz' : '📝 Take Quiz'}
@@ -634,29 +627,28 @@ function CourseDetail() {
           </div>
         </div>
 
-        {/* Right Column - Active Lesson or Quiz */}
+        {/* RIGHT: Active lesson / quiz / placeholder */}
         <div>
           {showQuiz ? (
             <div style={{
               padding: 'clamp(1rem, 1.5vw, 1.5rem)',
               background: 'var(--bg-card)',
               borderRadius: '12px',
-              border: '1px solid var(--border-primary)'
+              border: '1px solid var(--border-primary)',
             }}>
               <h3 style={{
                 marginBottom: '1rem',
                 color: 'var(--text-primary)',
                 fontSize: 'clamp(1.1rem, 1.5vw, 1.2rem)',
-                marginTop: 0
-              }}>
-                📝 Course Quiz
-              </h3>
+                marginTop: 0,
+              }}>📝 Course Quiz</h3>
+
               {course.quiz?.questions ? (
                 <>
                   <p style={{
                     color: 'var(--text-tertiary)',
                     marginBottom: '1.5rem',
-                    fontSize: 'clamp(0.9rem, 1vw, 1rem)'
+                    fontSize: 'clamp(0.9rem, 1vw, 1rem)',
                   }}>
                     Test your knowledge with {course.quiz.questions.length} questions
                   </p>
@@ -678,10 +670,7 @@ function CourseDetail() {
                           : 'Review the lessons and try again.'}
                       </p>
                       <button
-                        onClick={() => {
-                          setQuizSubmitted(false);
-                          setQuizAnswers({});
-                        }}
+                        onClick={() => { setQuizSubmitted(false); setQuizAnswers({}); }}
                         style={{
                           padding: '0.6rem 1.5rem',
                           marginTop: '1rem',
@@ -691,7 +680,6 @@ function CourseDetail() {
                           borderRadius: '8px',
                           cursor: 'pointer',
                           fontSize: 'clamp(0.9rem, 1vw, 1rem)',
-                          transition: 'all 0.3s ease'
                         }}
                       >
                         Retry Quiz
@@ -705,27 +693,21 @@ function CourseDetail() {
                             fontWeight: '500',
                             color: 'var(--text-primary)',
                             marginBottom: '0.5rem',
-                            fontSize: 'clamp(0.9rem, 1vw, 1rem)'
-                          }}>
-                            {qIndex + 1}. {q.question}
-                          </p>
+                            fontSize: 'clamp(0.9rem, 1vw, 1rem)',
+                          }}>{qIndex + 1}. {q.question}</p>
                           {[q.option1, q.option2, q.option3, q.option4].map((option, oIndex) => (
                             option && (
-                              <label
-                                key={oIndex}
-                                style={{
-                                  display: 'block',
-                                  padding: '0.5rem 0.75rem',
-                                  marginBottom: '0.25rem',
-                                  background: quizAnswers[qIndex] === oIndex ? 'var(--accent-light)' : 'transparent',
-                                  borderRadius: '6px',
-                                  cursor: 'pointer',
-                                  border: quizAnswers[qIndex] === oIndex ? '1px solid #6c5ce7' : '1px solid transparent',
-                                  transition: 'all 0.2s ease',
-                                  fontSize: 'clamp(0.85rem, 1vw, 0.95rem)',
-                                  color: 'var(--text-primary)'
-                                }}
-                              >
+                              <label key={oIndex} style={{
+                                display: 'block',
+                                padding: '0.5rem 0.75rem',
+                                marginBottom: '0.25rem',
+                                background: quizAnswers[qIndex] === oIndex ? 'var(--accent-light)' : 'transparent',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                border: quizAnswers[qIndex] === oIndex ? '1px solid #6c5ce7' : '1px solid transparent',
+                                fontSize: 'clamp(0.85rem, 1vw, 0.95rem)',
+                                color: 'var(--text-primary)',
+                              }}>
                                 <input
                                   type="radio"
                                   name={`question-${qIndex}`}
@@ -753,8 +735,7 @@ function CourseDetail() {
                           cursor: Object.keys(quizAnswers).length < (course.quiz.questions?.length || 0) ? 'not-allowed' : 'pointer',
                           fontSize: 'clamp(0.9rem, 1.2vw, 1rem)',
                           fontWeight: '500',
-                          transition: 'all 0.3s ease',
-                          opacity: Object.keys(quizAnswers).length < (course.quiz.questions?.length || 0) ? 0.6 : 1
+                          opacity: Object.keys(quizAnswers).length < (course.quiz.questions?.length || 0) ? 0.6 : 1,
                         }}
                       >
                         Submit Quiz ({Object.keys(quizAnswers).length}/{course.quiz.questions?.length || 0})
@@ -773,7 +754,7 @@ function CourseDetail() {
               padding: 'clamp(1rem, 1.5vw, 1.5rem)',
               background: 'var(--bg-card)',
               borderRadius: '12px',
-              border: '1px solid var(--border-primary)'
+              border: '1px solid var(--border-primary)',
             }}>
               <div style={{
                 display: 'flex',
@@ -781,13 +762,13 @@ function CourseDetail() {
                 alignItems: 'center',
                 marginBottom: '1rem',
                 flexWrap: 'wrap',
-                gap: '0.5rem'
+                gap: '0.5rem',
               }}>
                 <h3 style={{
                   color: 'var(--text-primary)',
                   fontSize: 'clamp(1rem, 1.3vw, 1.1rem)',
                   wordBreak: 'break-word',
-                  margin: 0
+                  margin: 0,
                 }}>
                   {activeLesson.title}
                 </h3>
@@ -801,10 +782,12 @@ function CourseDetail() {
                 borderRadius: '8px',
                 padding: 'clamp(2rem, 5vw, 3rem)',
                 textAlign: 'center',
-                marginBottom: '1rem'
+                marginBottom: '1rem',
               }}>
                 <div style={{ fontSize: 'clamp(3rem, 5vw, 4rem)', marginBottom: '1rem' }}>🎥</div>
-                <p style={{ color: 'var(--text-tertiary)', fontSize: 'clamp(0.9rem, 1vw, 1rem)' }}>Lesson content would appear here</p>
+                <p style={{ color: 'var(--text-tertiary)', fontSize: 'clamp(0.9rem, 1vw, 1rem)' }}>
+                  Lesson content would appear here
+                </p>
                 <p style={{ fontSize: 'clamp(0.8rem, 0.9vw, 0.85rem)', color: 'var(--text-muted)' }}>
                   {activeLesson.description || 'No description available'}
                 </p>
@@ -823,10 +806,9 @@ function CourseDetail() {
                       border: 'none',
                       borderRadius: '8px',
                       cursor: isCompleting ? 'not-allowed' : 'pointer',
-                      transition: 'all 0.3s ease',
                       opacity: isCompleting ? 0.7 : 1,
                       fontSize: 'clamp(0.85rem, 1vw, 0.95rem)',
-                      minWidth: '120px'
+                      minWidth: '120px',
                     }}
                   >
                     {isCompleting ? 'Processing...' : activeLesson.isCompleted ? '✅ Completed' : '🎯 Mark as Complete'}
@@ -840,8 +822,7 @@ function CourseDetail() {
                       border: '1px solid var(--border-primary)',
                       borderRadius: '8px',
                       cursor: 'pointer',
-                      transition: 'all 0.3s ease',
-                      fontSize: 'clamp(0.85rem, 1vw, 0.95rem)'
+                      fontSize: 'clamp(0.85rem, 1vw, 0.95rem)',
                     }}
                   >
                     Close
@@ -855,20 +836,17 @@ function CourseDetail() {
               background: 'var(--bg-secondary)',
               borderRadius: '12px',
               border: '1px solid var(--border-primary)',
-              textAlign: 'center'
+              textAlign: 'center',
             }}>
               <div style={{ fontSize: 'clamp(3rem, 5vw, 4rem)', marginBottom: '1rem' }}>📖</div>
               <h3 style={{
                 color: 'var(--text-primary)',
                 marginBottom: '0.5rem',
-                fontSize: 'clamp(1.1rem, 1.5vw, 1.2rem)'
+                fontSize: 'clamp(1.1rem, 1.5vw, 1.2rem)',
               }}>
-                Select a lesson to begin
+                {isEnrolled ? 'Select a lesson to begin' : 'Enroll to start learning'}
               </h3>
-              <p style={{
-                color: 'var(--text-tertiary)',
-                fontSize: 'clamp(0.9rem, 1vw, 1rem)'
-              }}>
+              <p style={{ color: 'var(--text-tertiary)', fontSize: 'clamp(0.9rem, 1vw, 1rem)' }}>
                 {isEnrolled
                   ? 'Choose a lesson from the left sidebar or take the quiz to test your knowledge.'
                   : 'Enroll in this course to access lessons and quizzes.'}
@@ -879,31 +857,21 @@ function CourseDetail() {
                   justifyContent: 'center',
                   gap: 'clamp(1rem, 2vw, 2rem)',
                   marginTop: '1.5rem',
-                  flexWrap: 'wrap'
+                  flexWrap: 'wrap',
                 }}>
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 'clamp(1.2rem, 2vw, 1.5rem)', color: '#6c5ce7' }}>
-                      {completedLessons}
-                    </div>
-                    <div style={{ fontSize: 'clamp(0.75rem, 0.9vw, 0.85rem)', color: 'var(--text-tertiary)' }}>
-                      Lessons Completed
-                    </div>
+                    <div style={{ fontSize: 'clamp(1.2rem, 2vw, 1.5rem)', color: '#6c5ce7' }}>{completedLessons}</div>
+                    <div style={{ fontSize: 'clamp(0.75rem, 0.9vw, 0.85rem)', color: 'var(--text-tertiary)' }}>Lessons Completed</div>
                   </div>
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 'clamp(1.2rem, 2vw, 1.5rem)', color: '#6c5ce7' }}>
-                      {progress}%
-                    </div>
-                    <div style={{ fontSize: 'clamp(0.75rem, 0.9vw, 0.85rem)', color: 'var(--text-tertiary)' }}>
-                      Overall Progress
-                    </div>
+                    <div style={{ fontSize: 'clamp(1.2rem, 2vw, 1.5rem)', color: '#6c5ce7' }}>{progress}%</div>
+                    <div style={{ fontSize: 'clamp(0.75rem, 0.9vw, 0.85rem)', color: 'var(--text-tertiary)' }}>Overall Progress</div>
                   </div>
                   <div style={{ textAlign: 'center' }}>
                     <div style={{ fontSize: 'clamp(1.2rem, 2vw, 1.5rem)', color: '#6c5ce7' }}>
                       {(course.lessons?.length || 0) - completedLessons}
                     </div>
-                    <div style={{ fontSize: 'clamp(0.75rem, 0.9vw, 0.85rem)', color: 'var(--text-tertiary)' }}>
-                      Lessons Remaining
-                    </div>
+                    <div style={{ fontSize: 'clamp(0.75rem, 0.9vw, 0.85rem)', color: 'var(--text-tertiary)' }}>Lessons Remaining</div>
                   </div>
                 </div>
               )}
