@@ -1,33 +1,28 @@
 import api from './axiosConfig';
 
-export const getStudyGroups = () => {
-  return api.get('/study-groups');
-};
+export const getStudyGroups = (params = {}) =>
+  api.get('/study-groups', { params });
 
-export const getStudyGroupById = (id) => {
-  return api.get(`/study-groups/${id}`);
-};
+export const getStudyGroupById = (id) =>
+  api.get(`/study-groups/${id}`);
 
-export const createStudyGroup = (groupData) => {
-  return api.post('/study-groups', groupData);
-};
+export const getGroupsByCourse = (courseId) =>
+  api.get('/study-groups', { params: { courseId } });
 
-export const joinStudyGroup = (groupId, userId) => {
-  return api.post(`/study-groups/${groupId}/join`, { userId });
-};
+export const createStudyGroup = (groupData) =>
+  api.post('/study-groups', groupData);
 
-export const leaveStudyGroup = (groupId, userId) => {
-  return api.delete(`/study-groups/${groupId}/leave`, { data: { userId } });
-};
+export const joinStudyGroup = (groupId) =>
+  api.post(`/study-groups/${groupId}/join`);
 
-export const deleteStudyGroup = (groupId) => {
-  return api.delete(`/study-groups/${groupId}/delete`);
-};
+export const leaveStudyGroup = (groupId) =>
+  api.delete(`/study-groups/${groupId}/leave`);
 
-export const getGroupMessages = (groupId) => {
-  return api.get(`/study-groups/${groupId}/messages`);
-};
+export const deleteStudyGroup = (groupId) =>
+  api.delete(`/study-groups/${groupId}/delete`);
 
-export const sendGroupMessage = (groupId, message) => {
-  return api.post(`/study-groups/${groupId}/messages`, { message });
-};
+export const getGroupMessages = (groupId, limit = 50) =>
+  api.get(`/study-groups/${groupId}/messages`, { params: { limit } });
+
+export const sendGroupMessage = (groupId, message) =>
+  api.post(`/study-groups/${groupId}/messages`, { message });

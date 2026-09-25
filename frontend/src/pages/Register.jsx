@@ -2,18 +2,45 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { register } from '../api/authAPI';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import WelcomeCelebration from '../components/common/WelcomeCelebration';
+
+const CATEGORIES = [
+  'Web Development',
+  'Programming',
+  'Data Science',
+  'Design',
+  'Mobile Development',
+  'DevOps',
+  'Business',
+  'Marketing',
+  'Photography',
+  'Music',
+  'Other'
+];
 
 function Register() {
   const navigate = useNavigate();
   const { login: authLogin } = useAuth();
+  const toast = useToast();
+  const [step, setStep] = useState(1); // 1: role picker, 2: form
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
     email: '',
     password: '',
     confirmPassword: '',
-    agreeTerms: false
+    role: 'Student',
+    agreeTerms: false,
+    // Instructor-specific fields
+    headline: '',
+    teachingCategory: '',
+    yearsExperience: 0,
+    expertise: '',
+    instructorBio: '',
+    credentials: '',
+    website: '',
+    linkedin: ''
   });
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
@@ -33,8 +60,12 @@ function Register() {
     setGeneralError('');
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleRoleSelect = (role) => {
+    setFormData({ ...formData, role });
+    setStep(2);
+  };
+
+  const validate = () => {
     const newErrors = {};
     if (!formData.firstName) newErrors.firstName = 'First name is required';
     if (!formData.lastName) newErrors.lastName = 'Last name is required';
@@ -46,6 +77,21 @@ function Register() {
     }
     if (!formData.agreeTerms) newErrors.agreeTerms = 'You must agree to the terms';
 
+    // Instructor-specific validation
+    if (formData.role === 'Instructor') {
+      if (!formData.headline) newErrors.headline = 'Professional headline is required';
+      if (!formData.teachingCategory) newErrors.teachingCategory = 'Please select a category';
+      if (!formData.expertise) newErrors.expertise = 'Areas of expertise are required';
+      if (!formData.instructorBio) newErrors.instructorBio = 'Bio is required';
+    }
+
+    return newErrors;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const newErrors = validate();
+
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return;
@@ -55,23 +101,38 @@ function Register() {
     setGeneralError('');
 
     try {
-      const response = await register({
+      const payload = {
         firstName: formData.firstName,
         lastName: formData.lastName,
         email: formData.email,
-        password: formData.password
-      });
+        password: formData.password,
+        role: formData.role
+      };
+
+      // Add instructor fields if registering as instructor
+      if (formData.role === 'Instructor') {
+        payload.headline = formData.headline;
+        payload.teachingCategory = formData.teachingCategory;
+        payload.yearsExperience = parseInt(formData.yearsExperience) || 0;
+        payload.expertise = formData.expertise;
+        payload.instructorBio = formData.instructorBio;
+        payload.credentials = formData.credentials;
+        payload.website = formData.website;
+        payload.linkedin = formData.linkedin;
+      }
+
+      console.log('📤 Registering with payload:', payload);
+
+      const response = await register(payload);
       
-      // Use auth context to login
       authLogin(response.data.user, response.data.token);
-      
-      // Show welcome celebration
       setUserName(`${formData.firstName} ${formData.lastName}`);
       setShowWelcome(true);
-      
     } catch (error) {
       console.error('Registration failed:', error);
-      setGeneralError(error.response?.data?.error || 'Registration failed. Please try again.');
+      const errMsg = error.response?.data?.error || 'Registration failed. Please try again.';
+      setGeneralError(errMsg);
+      toast.error(errMsg);
     } finally {
       setLoading(false);
     }
@@ -86,338 +147,646 @@ function Register() {
           navigate('/dashboard');
         }}
         userName={userName}
+        role={formData.role}
       />
       
       <div className="auth-page" style={{ 
-        maxWidth: '480px', 
+        maxWidth: formData.role === 'Instructor' ? '620px' : '520px', 
         margin: '3rem auto', 
-        padding: '0 1rem' 
+        padding: '0 1rem',
+        transition: 'max-width 0.3s'
       }}>
         <div className="auth-card" style={{ 
-          padding: '2.5rem',
-          background: '#ffffff',
+          padding: 'clamp(1.5rem, 3vw, 2.5rem)',
+          background: 'var(--bg-card)',
           borderRadius: '16px',
-          border: '1px solid #eeecfb',
-          boxShadow: '0 4px 24px rgba(0,0,0,0.06)'
+          border: '1px solid var(--border-primary)',
+          boxShadow: 'var(--shadow-md)'
         }}>
+          {/* Header */}
           <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-            <div style={{ fontSize: '2.5rem' }}>🚀</div>
-            <h2 style={{ fontSize: '1.8rem', color: '#1a1a2e', marginTop: '0.5rem' }}>Create Account</h2>
-            <p style={{ color: '#666' }}>Start your learning journey today</p>
-          </div>
-
-          {generalError && (
-            <div style={{
-              padding: '0.75rem',
-              background: '#fef2f2',
-              color: '#ef4444',
-              borderRadius: '8px',
-              marginBottom: '1rem',
-              textAlign: 'center'
+            <div style={{ fontSize: '2.5rem' }}>
+              {step === 1 ? '🚀' : formData.role === 'Instructor' ? '👨‍🏫' : '🎓'}
+            </div>
+            <h2 style={{ 
+              fontSize: '1.8rem', 
+              color: 'var(--text-primary)', 
+              marginTop: '0.5rem' 
             }}>
-              {generalError}
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', color: '#1a1a2e' }}>
-                  First Name
-                </label>
-                <input
-                  type="text"
-                  name="firstName"
-                  value={formData.firstName}
-                  onChange={handleChange}
-                  placeholder="Alex"
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    border: `1px solid ${errors.firstName ? '#ef4444' : '#ddd'}`,
-                    borderRadius: '8px',
-                    fontSize: '1rem',
-                    outline: 'none',
-                    transition: 'border-color 0.15s'
-                  }}
-                  onFocus={(e) => e.target.style.borderColor = '#6c5ce7'}
-                  onBlur={(e) => e.target.style.borderColor = errors.firstName ? '#ef4444' : '#ddd'}
-                />
-                {errors.firstName && (
-                  <div style={{ color: '#ef4444', fontSize: '0.85rem', marginTop: '0.25rem' }}>
-                    {errors.firstName}
-                  </div>
-                )}
-              </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', color: '#1a1a2e' }}>
-                  Last Name
-                </label>
-                <input
-                  type="text"
-                  name="lastName"
-                  value={formData.lastName}
-                  onChange={handleChange}
-                  placeholder="Johnson"
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    border: `1px solid ${errors.lastName ? '#ef4444' : '#ddd'}`,
-                    borderRadius: '8px',
-                    fontSize: '1rem',
-                    outline: 'none',
-                    transition: 'border-color 0.15s'
-                  }}
-                  onFocus={(e) => e.target.style.borderColor = '#6c5ce7'}
-                  onBlur={(e) => e.target.style.borderColor = errors.lastName ? '#ef4444' : '#ddd'}
-                />
-                {errors.lastName && (
-                  <div style={{ color: '#ef4444', fontSize: '0.85rem', marginTop: '0.25rem' }}>
-                    {errors.lastName}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', color: '#1a1a2e' }}>
-                Email Address
-              </label>
-              <input
-                type="email"
-                name="email"
-                value={formData.email}
-                onChange={handleChange}
-                placeholder="you@example.com"
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  border: `1px solid ${errors.email ? '#ef4444' : '#ddd'}`,
-                  borderRadius: '8px',
-                  fontSize: '1rem',
-                  outline: 'none',
-                  transition: 'border-color 0.15s'
-                }}
-                onFocus={(e) => e.target.style.borderColor = '#6c5ce7'}
-                onBlur={(e) => e.target.style.borderColor = errors.email ? '#ef4444' : '#ddd'}
-              />
-              {errors.email && (
-                <div style={{ color: '#ef4444', fontSize: '0.85rem', marginTop: '0.25rem' }}>
-                  {errors.email}
-                </div>
-              )}
-            </div>
-
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', color: '#1a1a2e' }}>
-                Password
-              </label>
-              <input
-                type="password"
-                name="password"
-                value={formData.password}
-                onChange={handleChange}
-                placeholder="Min. 8 characters"
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  border: `1px solid ${errors.password ? '#ef4444' : '#ddd'}`,
-                  borderRadius: '8px',
-                  fontSize: '1rem',
-                  outline: 'none',
-                  transition: 'border-color 0.15s'
-                }}
-                onFocus={(e) => e.target.style.borderColor = '#6c5ce7'}
-                onBlur={(e) => e.target.style.borderColor = errors.password ? '#ef4444' : '#ddd'}
-              />
-              {errors.password && (
-                <div style={{ color: '#ef4444', fontSize: '0.85rem', marginTop: '0.25rem' }}>
-                  {errors.password}
-                </div>
-              )}
-            </div>
-
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', color: '#1a1a2e' }}>
-                Confirm Password
-              </label>
-              <input
-                type="password"
-                name="confirmPassword"
-                value={formData.confirmPassword}
-                onChange={handleChange}
-                placeholder="Confirm your password"
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  border: `1px solid ${errors.confirmPassword ? '#ef4444' : '#ddd'}`,
-                  borderRadius: '8px',
-                  fontSize: '1rem',
-                  outline: 'none',
-                  transition: 'border-color 0.15s'
-                }}
-                onFocus={(e) => e.target.style.borderColor = '#6c5ce7'}
-                onBlur={(e) => e.target.style.borderColor = errors.confirmPassword ? '#ef4444' : '#ddd'}
-              />
-              {errors.confirmPassword && (
-                <div style={{ color: '#ef4444', fontSize: '0.85rem', marginTop: '0.25rem' }}>
-                  {errors.confirmPassword}
-                </div>
-              )}
-            </div>
-
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  name="agreeTerms"
-                  checked={formData.agreeTerms}
-                  onChange={handleChange}
-                  style={{ marginTop: '0.25rem', cursor: 'pointer', accentColor: '#6c5ce7' }}
-                />
-                <span style={{ fontSize: '0.9rem', color: '#666' }}>
-                  I agree to LearnHub's <Link to="/terms" style={{ color: '#6c5ce7' }}>Terms of Service</Link> and <Link to="/privacy" style={{ color: '#6c5ce7' }}>Privacy Policy</Link>
-                </span>
-              </label>
-              {errors.agreeTerms && (
-                <div style={{ color: '#ef4444', fontSize: '0.85rem', marginTop: '0.25rem' }}>
-                  {errors.agreeTerms}
-                </div>
-              )}
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                background: loading ? '#a29bfe' : '#6c5ce7',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '1rem',
-                fontWeight: '500',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                transition: 'background 0.15s',
-                opacity: loading ? 0.7 : 1
-              }}
-              onMouseEnter={(e) => {
-                if (!loading) e.currentTarget.style.background = '#5a4bd1';
-              }}
-              onMouseLeave={(e) => {
-                if (!loading) e.currentTarget.style.background = '#6c5ce7';
-              }}
-            >
-              {loading ? 'Creating Account...' : 'Create Account'}
-            </button>
-          </form>
-
-          <div style={{ marginTop: '1.5rem', textAlign: 'center' }}>
-            <p style={{ color: '#666' }}>
-              Already have an account?{' '}
-              <Link to="/login" style={{ color: '#6c5ce7', fontWeight: '500' }}>
-                Sign In
-              </Link>
+              {step === 1 ? 'Join LearnHub' : formData.role === 'Instructor' ? 'Instructor Signup' : 'Student Signup'}
+            </h2>
+            <p style={{ color: 'var(--text-tertiary)' }}>
+              {step === 1 
+                ? 'Choose how you want to join'
+                : formData.role === 'Instructor'
+                  ? 'Share your expertise with the world'
+                  : 'Start your learning journey today'}
             </p>
           </div>
 
-          {/* Social Sign Up */}
-          <div style={{ marginTop: '1.5rem' }}>
-            <div style={{ 
-              borderTop: '1px solid #eeecfb', 
-              marginBottom: '1.5rem',
-              position: 'relative',
-              textAlign: 'center'
-            }}>
-              <span style={{
-                background: '#ffffff',
-                padding: '0 1rem',
-                position: 'relative',
-                top: '-0.6rem',
-                fontSize: '0.85rem',
-                color: '#999'
+          {/* STEP 1: Role Picker */}
+          {step === 1 && (
+            <div>
+              <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: '1fr 1fr', 
+                gap: '1rem' 
               }}>
-                Or sign up with
-              </span>
+                {/* Student Card */}
+                <div
+                  onClick={() => handleRoleSelect('Student')}
+                  style={{
+                    padding: '2rem 1.25rem',
+                    background: 'var(--bg-secondary)',
+                    border: '2px solid var(--border-primary)',
+                    borderRadius: '16px',
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-4px)';
+                    e.currentTarget.style.borderColor = '#6c5ce7';
+                    e.currentTarget.style.boxShadow = '0 8px 24px rgba(108,92,231,0.15)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.borderColor = 'var(--border-primary)';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }}
+                >
+                  <div style={{ fontSize: '3rem', marginBottom: '0.75rem' }}>🎓</div>
+                  <div style={{ 
+                    fontWeight: '700', 
+                    color: 'var(--text-primary)',
+                    marginBottom: '0.5rem',
+                    fontSize: '1.1rem'
+                  }}>
+                    Student
+                  </div>
+                  <div style={{ 
+                    fontSize: '0.85rem', 
+                    color: 'var(--text-tertiary)',
+                    lineHeight: '1.5'
+                  }}>
+                    Enroll in courses, join study groups, track your progress
+                  </div>
+                </div>
+
+                {/* Instructor Card */}
+                <div
+                  onClick={() => handleRoleSelect('Instructor')}
+                  style={{
+                    padding: '2rem 1.25rem',
+                    background: 'var(--bg-secondary)',
+                    border: '2px solid var(--border-primary)',
+                    borderRadius: '16px',
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-4px)';
+                    e.currentTarget.style.borderColor = '#6c5ce7';
+                    e.currentTarget.style.boxShadow = '0 8px 24px rgba(108,92,231,0.15)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.borderColor = 'var(--border-primary)';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }}
+                >
+                  <div style={{ fontSize: '3rem', marginBottom: '0.75rem' }}>👨‍🏫</div>
+                  <div style={{ 
+                    fontWeight: '700', 
+                    color: 'var(--text-primary)',
+                    marginBottom: '0.5rem',
+                    fontSize: '1.1rem'
+                  }}>
+                    Instructor
+                  </div>
+                  <div style={{ 
+                    fontSize: '0.85rem', 
+                    color: 'var(--text-tertiary)',
+                    lineHeight: '1.5'
+                  }}>
+                    Create and publish courses, teach students worldwide
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ 
+                marginTop: '1.5rem', 
+                textAlign: 'center',
+                fontSize: '0.85rem',
+                color: 'var(--text-tertiary)'
+              }}>
+                Already have an account?{' '}
+                <Link to="/login" style={{ color: '#6c5ce7', fontWeight: '500' }}>
+                  Sign In
+                </Link>
+              </div>
             </div>
-            
-            <div style={{ 
-              display: 'flex', 
-              gap: '1rem', 
-              justifyContent: 'center',
-              flexWrap: 'wrap'
-            }}>
+          )}
+
+          {/* STEP 2: Form */}
+          {step === 2 && (
+            <form onSubmit={handleSubmit}>
+              {/* Back button */}
               <button
                 type="button"
+                onClick={() => setStep(1)}
                 style={{
-                  flex: 1,
-                  minWidth: '140px',
-                  padding: '0.75rem 1.5rem',
-                  background: '#ffffff',
-                  border: '1px solid #ddd',
-                  borderRadius: '8px',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-tertiary)',
                   cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '0.75rem',
-                  fontSize: '0.95rem',
-                  color: '#333',
-                  transition: 'all 0.2s',
-                  fontWeight: '500'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#f8f9fa';
-                  e.currentTarget.style.borderColor = '#6c5ce7';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = '#ffffff';
-                  e.currentTarget.style.borderColor = '#ddd';
+                  fontSize: '0.85rem',
+                  marginBottom: '1rem',
+                  padding: 0
                 }}
               >
-                <svg width="20" height="20" viewBox="0 0 48 48">
-                  <path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z" />
-                  <path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z" />
-                  <path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z" />
-                  <path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z" />
-                </svg>
-                Google
+                ← Change role
               </button>
-              
+
+              {generalError && (
+                <div style={{
+                  padding: '0.75rem',
+                  background: 'var(--error-bg)',
+                  color: 'var(--error)',
+                  borderRadius: '8px',
+                  marginBottom: '1rem',
+                  textAlign: 'center',
+                  fontSize: '0.9rem'
+                }}>
+                  {generalError}
+                </div>
+              )}
+
+              {/* Basic info */}
+              <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: '1fr 1fr', 
+                gap: '1rem', 
+                marginBottom: '1rem' 
+              }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                    First Name
+                  </label>
+                  <input
+                    type="text"
+                    name="firstName"
+                    value={formData.firstName}
+                    onChange={handleChange}
+                    placeholder="Alex"
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      border: `1px solid ${errors.firstName ? 'var(--error)' : 'var(--border-input)'}`,
+                      borderRadius: '8px',
+                      fontSize: '1rem',
+                      color: 'var(--text-primary)',
+                      background: 'var(--bg-input)',
+                      outline: 'none'
+                    }}
+                  />
+                  {errors.firstName && (
+                    <div style={{ color: 'var(--error)', fontSize: '0.8rem', marginTop: '0.25rem' }}>
+                      {errors.firstName}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                    Last Name
+                  </label>
+                  <input
+                    type="text"
+                    name="lastName"
+                    value={formData.lastName}
+                    onChange={handleChange}
+                    placeholder="Johnson"
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      border: `1px solid ${errors.lastName ? 'var(--error)' : 'var(--border-input)'}`,
+                      borderRadius: '8px',
+                      fontSize: '1rem',
+                      color: 'var(--text-primary)',
+                      background: 'var(--bg-input)',
+                      outline: 'none'
+                    }}
+                  />
+                  {errors.lastName && (
+                    <div style={{ color: 'var(--error)', fontSize: '0.8rem', marginTop: '0.25rem' }}>
+                      {errors.lastName}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  placeholder="you@example.com"
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    border: `1px solid ${errors.email ? 'var(--error)' : 'var(--border-input)'}`,
+                    borderRadius: '8px',
+                    fontSize: '1rem',
+                    color: 'var(--text-primary)',
+                    background: 'var(--bg-input)',
+                    outline: 'none'
+                  }}
+                />
+                {errors.email && (
+                  <div style={{ color: 'var(--error)', fontSize: '0.8rem', marginTop: '0.25rem' }}>
+                    {errors.email}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                    Password
+                  </label>
+                  <input
+                    type="password"
+                    name="password"
+                    value={formData.password}
+                    onChange={handleChange}
+                    placeholder="Min. 8 characters"
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      border: `1px solid ${errors.password ? 'var(--error)' : 'var(--border-input)'}`,
+                      borderRadius: '8px',
+                      fontSize: '1rem',
+                      color: 'var(--text-primary)',
+                      background: 'var(--bg-input)',
+                      outline: 'none'
+                    }}
+                  />
+                  {errors.password && (
+                    <div style={{ color: 'var(--error)', fontSize: '0.8rem', marginTop: '0.25rem' }}>
+                      {errors.password}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                    Confirm Password
+                  </label>
+                  <input
+                    type="password"
+                    name="confirmPassword"
+                    value={formData.confirmPassword}
+                    onChange={handleChange}
+                    placeholder="Confirm password"
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      border: `1px solid ${errors.confirmPassword ? 'var(--error)' : 'var(--border-input)'}`,
+                      borderRadius: '8px',
+                      fontSize: '1rem',
+                      color: 'var(--text-primary)',
+                      background: 'var(--bg-input)',
+                      outline: 'none'
+                    }}
+                  />
+                  {errors.confirmPassword && (
+                    <div style={{ color: 'var(--error)', fontSize: '0.8rem', marginTop: '0.25rem' }}>
+                      {errors.confirmPassword}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* INSTRUCTOR-SPECIFIC FIELDS */}
+              {formData.role === 'Instructor' && (
+                <div style={{
+                  padding: '1.5rem',
+                  background: 'var(--bg-secondary)',
+                  borderRadius: '12px',
+                  border: '1px solid var(--border-primary)',
+                  marginBottom: '1rem'
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    marginBottom: '1.25rem',
+                    paddingBottom: '0.75rem',
+                    borderBottom: '1px solid var(--border-primary)'
+                  }}>
+                    <span style={{ fontSize: '1.25rem' }}>📋</span>
+                    <h3 style={{
+                      color: 'var(--text-primary)',
+                      fontSize: '1rem',
+                      fontWeight: '600',
+                      margin: 0
+                    }}>
+                      Professional Information
+                    </h3>
+                  </div>
+
+                  {/* Headline */}
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                      Professional Headline *
+                    </label>
+                    <input
+                      type="text"
+                      name="headline"
+                      value={formData.headline}
+                      onChange={handleChange}
+                      placeholder="e.g., Senior React Developer & Educator"
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        border: `1px solid ${errors.headline ? 'var(--error)' : 'var(--border-input)'}`,
+                        borderRadius: '8px',
+                        fontSize: '1rem',
+                        color: 'var(--text-primary)',
+                        background: 'var(--bg-input)',
+                        outline: 'none'
+                      }}
+                    />
+                    {errors.headline && (
+                      <div style={{ color: 'var(--error)', fontSize: '0.8rem', marginTop: '0.25rem' }}>
+                        {errors.headline}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Category + Years */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                        Teaching Category *
+                      </label>
+                      <select
+                        name="teachingCategory"
+                        value={formData.teachingCategory}
+                        onChange={handleChange}
+                        style={{
+                          width: '100%',
+                          padding: '0.75rem',
+                          border: `1px solid ${errors.teachingCategory ? 'var(--error)' : 'var(--border-input)'}`,
+                          borderRadius: '8px',
+                          fontSize: '1rem',
+                          color: 'var(--text-primary)',
+                          background: 'var(--bg-input)',
+                          outline: 'none',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <option value="">Select a category</option>
+                        {CATEGORIES.map(cat => (
+                          <option key={cat} value={cat} style={{ color: '#1a1a2e', background: '#ffffff' }}>
+                            {cat}
+                          </option>
+                        ))}
+                      </select>
+                      {errors.teachingCategory && (
+                        <div style={{ color: 'var(--error)', fontSize: '0.8rem', marginTop: '0.25rem' }}>
+                          {errors.teachingCategory}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                        Years of Experience
+                      </label>
+                      <input
+                        type="number"
+                        name="yearsExperience"
+                        value={formData.yearsExperience}
+                        onChange={handleChange}
+                        min="0"
+                        max="50"
+                        style={{
+                          width: '100%',
+                          padding: '0.75rem',
+                          border: '1px solid var(--border-input)',
+                          borderRadius: '8px',
+                          fontSize: '1rem',
+                          color: 'var(--text-primary)',
+                          background: 'var(--bg-input)',
+                          outline: 'none'
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Expertise */}
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                      Areas of Expertise *
+                    </label>
+                    <input
+                      type="text"
+                      name="expertise"
+                      value={formData.expertise}
+                      onChange={handleChange}
+                      placeholder="e.g., React, TypeScript, Node.js, MongoDB"
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        border: `1px solid ${errors.expertise ? 'var(--error)' : 'var(--border-input)'}`,
+                        borderRadius: '8px',
+                        fontSize: '1rem',
+                        color: 'var(--text-primary)',
+                        background: 'var(--bg-input)',
+                        outline: 'none'
+                      }}
+                    />
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                      Separate with commas
+                    </div>
+                    {errors.expertise && (
+                      <div style={{ color: 'var(--error)', fontSize: '0.8rem', marginTop: '0.25rem' }}>
+                        {errors.expertise}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Bio */}
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                      Detailed Bio *
+                    </label>
+                    <textarea
+                      name="instructorBio"
+                      value={formData.instructorBio}
+                      onChange={handleChange}
+                      rows="4"
+                      placeholder="Tell students about your background, teaching style, and what they'll learn from you..."
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        border: `1px solid ${errors.instructorBio ? 'var(--error)' : 'var(--border-input)'}`,
+                        borderRadius: '8px',
+                        fontSize: '1rem',
+                        color: 'var(--text-primary)',
+                        background: 'var(--bg-input)',
+                        outline: 'none',
+                        fontFamily: 'inherit',
+                        resize: 'vertical'
+                      }}
+                    />
+                    {errors.instructorBio && (
+                      <div style={{ color: 'var(--error)', fontSize: '0.8rem', marginTop: '0.25rem' }}>
+                        {errors.instructorBio}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Credentials */}
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                      Education / Credentials
+                    </label>
+                    <textarea
+                      name="credentials"
+                      value={formData.credentials}
+                      onChange={handleChange}
+                      rows="2"
+                      placeholder="e.g., BSc Computer Science, Google Certified Developer"
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        border: '1px solid var(--border-input)',
+                        borderRadius: '8px',
+                        fontSize: '1rem',
+                        color: 'var(--text-primary)',
+                        background: 'var(--bg-input)',
+                        outline: 'none',
+                        fontFamily: 'inherit',
+                        resize: 'vertical'
+                      }}
+                    />
+                  </div>
+
+                  {/* Links */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                        Website / Portfolio
+                      </label>
+                      <input
+                        type="url"
+                        name="website"
+                        value={formData.website}
+                        onChange={handleChange}
+                        placeholder="https://yoursite.com"
+                        style={{
+                          width: '100%',
+                          padding: '0.75rem',
+                          border: '1px solid var(--border-input)',
+                          borderRadius: '8px',
+                          fontSize: '1rem',
+                          color: 'var(--text-primary)',
+                          background: 'var(--bg-input)',
+                          outline: 'none'
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                        LinkedIn
+                      </label>
+                      <input
+                        type="url"
+                        name="linkedin"
+                        value={formData.linkedin}
+                        onChange={handleChange}
+                        placeholder="https://linkedin.com/in/..."
+                        style={{
+                          width: '100%',
+                          padding: '0.75rem',
+                          border: '1px solid var(--border-input)',
+                          borderRadius: '8px',
+                          fontSize: '1rem',
+                          color: 'var(--text-primary)',
+                          background: 'var(--bg-input)',
+                          outline: 'none'
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Terms */}
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    name="agreeTerms"
+                    checked={formData.agreeTerms}
+                    onChange={handleChange}
+                    style={{ 
+                      marginTop: '0.25rem', 
+                      cursor: 'pointer', 
+                      accentColor: '#6c5ce7' 
+                    }}
+                  />
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                    I agree to LearnHub's{' '}
+                    <Link to="/terms" style={{ color: '#6c5ce7' }}>Terms of Service</Link>{' '}
+                    and{' '}
+                    <Link to="/privacy" style={{ color: '#6c5ce7' }}>Privacy Policy</Link>
+                  </span>
+                </label>
+                {errors.agreeTerms && (
+                  <div style={{ color: 'var(--error)', fontSize: '0.8rem', marginTop: '0.25rem' }}>
+                    {errors.agreeTerms}
+                  </div>
+                )}
+              </div>
+
               <button
-                type="button"
+                type="submit"
+                disabled={loading}
                 style={{
-                  flex: 1,
-                  minWidth: '140px',
-                  padding: '0.75rem 1.5rem',
-                  background: '#24292e',
-                  border: '1px solid #24292e',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '0.75rem',
-                  fontSize: '0.95rem',
-                  color: '#ffffff',
-                  transition: 'all 0.2s',
-                  fontWeight: '500'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#1b1f23';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = '#24292e';
+                  width: '100%',
+                  padding: '0.85rem',
+                  background: loading ? '#a29bfe' : '#6c5ce7',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '10px',
+                  fontSize: '1rem',
+                  fontWeight: '500',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  opacity: loading ? 0.7 : 1,
+                  transition: 'all 0.2s'
                 }}
               >
-                <svg width="20" height="20" viewBox="0 0 16 16" fill="white">
-                  <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
-                </svg>
-                GitHub
+                {loading 
+                  ? 'Creating Account...' 
+                  : `Create ${formData.role} Account`}
               </button>
-            </div>
-          </div>
+
+              <div style={{ marginTop: '1.5rem', textAlign: 'center' }}>
+                <p style={{ color: 'var(--text-tertiary)', fontSize: '0.9rem' }}>
+                  Already have an account?{' '}
+                  <Link to="/login" style={{ color: '#6c5ce7', fontWeight: '500' }}>
+                    Sign In
+                  </Link>
+                </p>
+              </div>
+            </form>
+          )}
         </div>
       </div>
     </>

@@ -3,27 +3,44 @@ import { getCurrentUser } from '../api/authAPI';
 
 const AuthContext = createContext();
 
+// ✅ Capitalize helper
+const capitalize = (str) => {
+  if (!str) return '';
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+};
+
+const normalizeUser = (userData) => {
+  if (!userData) return null;
+  return {
+    ...userData,
+    firstName: capitalize(userData.firstName),
+    lastName: capitalize(userData.lastName)
+  };
+};
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    // Check if user is logged in on mount
     const currentUser = getCurrentUser();
     if (currentUser) {
-      setUser(currentUser);
+      const normalized = normalizeUser(currentUser);
+      setUser(normalized);
       setIsAuthenticated(true);
+      // Update localStorage with normalized version
+      localStorage.setItem('user', JSON.stringify(normalized));
     }
     setLoading(false);
   }, []);
 
   const login = (userData, token) => {
+    const normalized = normalizeUser(userData);
     localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(userData));
-    setUser(userData);
+    localStorage.setItem('user', JSON.stringify(normalized));
+    setUser(normalized);
     setIsAuthenticated(true);
-    // Dispatch event for Navbar
     window.dispatchEvent(new Event('userLoggedIn'));
   };
 
@@ -36,7 +53,7 @@ export function AuthProvider({ children }) {
   };
 
   const updateUser = (userData) => {
-    const updatedUser = { ...user, ...userData };
+    const updatedUser = normalizeUser({ ...user, ...userData });
     localStorage.setItem('user', JSON.stringify(updatedUser));
     setUser(updatedUser);
     window.dispatchEvent(new Event('userLoggedIn'));

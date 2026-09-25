@@ -3,6 +3,13 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../api/axiosConfig';
 import { getCurrentUser } from '../api/authAPI';
 import Celebration from '../components/common/Celebration';
+import InstructorCard from '../components/common/InstructorCard';
+
+// ✅ Helper: Check if a string is an image URL or data URI
+const isImageUrl = (url) => {
+  if (!url || typeof url !== 'string') return false;
+  return url.startsWith('data:image') || url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/');
+};
 
 function CourseDetail() {
   const { id } = useParams();
@@ -90,10 +97,10 @@ function CourseDetail() {
 
   const toggleLessonComplete = async (lessonId) => {
     if (isCompleting) return;
-    
+
     try {
       setIsCompleting(true);
-      
+
       const lesson = course?.lessons?.find(l => l.id === lessonId);
       if (!lesson) {
         setIsCompleting(false);
@@ -110,7 +117,7 @@ function CourseDetail() {
           console.warn('API error on uncomplete:', err);
         }
 
-        const updatedLessons = course.lessons.map(l => 
+        const updatedLessons = course.lessons.map(l =>
           l.id === lessonId ? { ...l, isCompleted: false } : l
         );
         setCourse({ ...course, lessons: updatedLessons });
@@ -119,7 +126,7 @@ function CourseDetail() {
         const newProgress = course.lessons.length > 0 ? Math.round((newCompletedCount / course.lessons.length) * 100) : 0;
         setCompletedLessons(newCompletedCount);
         setProgress(newProgress);
-        
+
         setIsCompleting(false);
         return;
       }
@@ -134,7 +141,7 @@ function CourseDetail() {
         console.warn('⚠️ API error on complete:', err);
       }
 
-      const updatedLessons = course.lessons.map(l => 
+      const updatedLessons = course.lessons.map(l =>
         l.id === lessonId ? { ...l, isCompleted: true } : l
       );
       setCourse({ ...course, lessons: updatedLessons });
@@ -146,7 +153,7 @@ function CourseDetail() {
 
       setCompletedLessonTitle(lesson.title);
       setShowCelebration(true);
-      
+
     } catch (err) {
       console.error('❌ Unexpected error:', err);
       alert('Failed to update progress. Please try again.');
@@ -221,9 +228,9 @@ function CourseDetail() {
   }
 
   return (
-    <div style={{ 
-      maxWidth: '1400px', 
-      margin: '2rem auto', 
+    <div style={{
+      maxWidth: '1400px',
+      margin: '2rem auto',
       padding: '0 clamp(1rem, 3vw, 2rem)',
       width: '100%'
     }}>
@@ -272,9 +279,9 @@ function CourseDetail() {
         courseTitle={course.title}
       />
 
-      <Link to="/courses" style={{ 
-        color: '#6c5ce7', 
-        display: 'inline-block', 
+      <Link to="/courses" style={{
+        color: '#6c5ce7',
+        display: 'inline-block',
         marginBottom: '1.5rem',
         textDecoration: 'none',
         fontSize: 'clamp(0.9rem, 1.2vw, 1rem)'
@@ -285,43 +292,66 @@ function CourseDetail() {
       {/* Course Header - Responsive */}
       <div style={{
         padding: 'clamp(1rem, 2vw, 2rem)',
-        background: '#fafafa',
+        background: 'var(--bg-secondary)',
         borderRadius: '12px',
-        border: '1px solid #e5e7eb',
+        border: '1px solid var(--border-primary)',
         marginBottom: '2rem'
       }}>
         <div className="course-header-row">
           <div className="course-header-info">
-            <div style={{ fontSize: 'clamp(2rem, 4vw, 3rem)', marginBottom: '0.5rem' }}>{course.imageUrl || '📚'}</div>
-            <h1 style={{ 
-              fontSize: 'clamp(1.5rem, 3vw, 2rem)', 
-              color: '#1a1a2e', 
+            {/* ✅ FIXED: Image/emoji rendering */}
+            <div style={{ marginBottom: '0.75rem' }}>
+              {isImageUrl(course.imageUrl) ? (
+                <img
+                  src={course.imageUrl}
+                  alt={course.title}
+                  style={{
+                    width: 'clamp(100px, 12vw, 140px)',
+                    height: 'clamp(100px, 12vw, 140px)',
+                    objectFit: 'cover',
+                    borderRadius: '16px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                    display: 'block'
+                  }}
+                />
+              ) : (
+                <div style={{ fontSize: 'clamp(2rem, 4vw, 3rem)' }}>
+                  {course.imageUrl || '📚'}
+                </div>
+              )}
+            </div>
+
+            <h1 style={{
+              fontSize: 'clamp(1.5rem, 3vw, 2rem)',
+              color: 'var(--text-primary)',
               marginBottom: '0.5rem',
-              wordBreak: 'break-word'
+              wordBreak: 'break-word',
+              marginTop: 0
             }}>
               {course.title}
             </h1>
-            <p style={{ 
-              color: '#4b5563', 
+            <p style={{
+              color: 'var(--text-secondary)',
               maxWidth: '600px',
               fontSize: 'clamp(0.9rem, 1.2vw, 1rem)',
-              lineHeight: '1.6'
+              lineHeight: '1.6',
+              margin: 0
             }}>
               {course.description}
             </p>
-            <div style={{ 
-              display: 'flex', 
-              gap: 'clamp(0.5rem, 1.5vw, 1.5rem)', 
-              marginTop: '1rem', 
+            <div style={{
+              display: 'flex',
+              gap: 'clamp(0.5rem, 1.5vw, 1.5rem)',
+              marginTop: '1rem',
               flexWrap: 'wrap',
               fontSize: 'clamp(0.8rem, 1vw, 0.9rem)'
             }}>
-              <span style={{ color: '#6b7280' }}>👨‍🏫 {course.instructorName || 'Instructor'}</span>
-              <span style={{ color: '#6b7280' }}>📚 {course.lessons?.length || 0} lessons</span>
-              <span style={{ color: '#6b7280' }}>⏱️ {course.duration || 'N/A'}</span>
-              <span style={{ 
+              <span style={{ color: 'var(--text-tertiary)' }}>👨‍🏫 {course.instructorName || 'Instructor'}</span>
+              <span style={{ color: 'var(--text-tertiary)' }}>📚 {course.lessons?.length || 0} lessons</span>
+              <span style={{ color: 'var(--text-tertiary)' }}>⏱️ {course.duration || 'N/A'}</span>
+              <span style={{
                 padding: '0.25rem 0.75rem',
-                background: '#6c5ce720',
+                background: 'var(--accent-light)',
                 color: '#6c5ce7',
                 borderRadius: '20px',
                 fontSize: 'clamp(0.75rem, 0.9vw, 0.85rem)'
@@ -329,7 +359,7 @@ function CourseDetail() {
                 {course.difficultyLevel || 'Beginner'}
               </span>
               {course.price === 0 ? (
-                <span style={{ 
+                <span style={{
                   padding: '0.25rem 0.75rem',
                   background: '#34d39920',
                   color: '#34d399',
@@ -339,7 +369,7 @@ function CourseDetail() {
                   Free
                 </span>
               ) : (
-                <span style={{ 
+                <span style={{
                   padding: '0.25rem 0.75rem',
                   background: '#fbbf2420',
                   color: '#f59e0b',
@@ -354,36 +384,36 @@ function CourseDetail() {
           <div className="course-header-action">
             {isEnrolled ? (
               <>
-                <div style={{ 
-                  fontSize: 'clamp(1.5rem, 3vw, 2rem)', 
-                  fontWeight: 'bold', 
+                <div style={{
+                  fontSize: 'clamp(1.5rem, 3vw, 2rem)',
+                  fontWeight: 'bold',
                   color: progress === 100 ? '#34d399' : '#6c5ce7',
                   marginBottom: '0.25rem'
                 }}>
                   {progress}%
                 </div>
-                <div style={{ color: '#6b7280', fontSize: 'clamp(0.8rem, 1vw, 0.9rem)' }}>
+                <div style={{ color: 'var(--text-tertiary)', fontSize: 'clamp(0.8rem, 1vw, 0.9rem)' }}>
                   {completedLessons} / {course.lessons?.length || 0} lessons
                 </div>
-                <div style={{ 
-                  width: '100%', 
-                  maxWidth: '150px', 
-                  background: '#e5e7eb', 
-                  borderRadius: '4px', 
+                <div style={{
+                  width: '100%',
+                  maxWidth: '150px',
+                  background: 'var(--bg-tertiary)',
+                  borderRadius: '4px',
                   height: '8px',
                   marginTop: '0.5rem',
                   marginLeft: 'auto'
                 }}>
-                  <div style={{ 
-                    background: progress === 100 ? '#34d399' : '#6c5ce7', 
-                    height: '100%', 
+                  <div style={{
+                    background: progress === 100 ? '#34d399' : '#6c5ce7',
+                    height: '100%',
                     borderRadius: '4px',
                     width: `${progress}%`,
                     transition: 'width 0.5s ease'
                   }} />
                 </div>
                 {progress === 100 && (
-                  <div style={{ 
+                  <div style={{
                     marginTop: '0.5rem',
                     color: '#34d399',
                     fontWeight: 'bold',
@@ -433,33 +463,40 @@ function CourseDetail() {
         </div>
       </div>
 
+      {/* ✅ NEW — About the Instructor */}
+      {course.instructorId && (
+        <InstructorCard instructorId={course.instructorId} variant="full" />
+      )}
+
       {/* Main Content - Responsive Grid */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 400px), 1fr))',
-        gap: 'clamp(1rem, 2vw, 2rem)'
+        gap: 'clamp(1rem, 2vw, 2rem)',
+        marginTop: '2rem'
       }}>
         {/* Left Column - Lessons */}
         <div>
           <div style={{
             padding: 'clamp(1rem, 1.5vw, 1.5rem)',
-            background: '#ffffff',
+            background: 'var(--bg-card)',
             borderRadius: '12px',
-            border: '1px solid #e5e7eb'
+            border: '1px solid var(--border-primary)'
           }}>
-            <h3 style={{ 
-              marginBottom: '1rem', 
-              color: '#1a1a2e',
-              fontSize: 'clamp(1.1rem, 1.5vw, 1.2rem)'
+            <h3 style={{
+              marginBottom: '1rem',
+              color: 'var(--text-primary)',
+              fontSize: 'clamp(1.1rem, 1.5vw, 1.2rem)',
+              marginTop: 0
             }}>
               Course Content
             </h3>
             {isEnrolled && (
-              <div style={{ 
-                display: 'flex', 
+              <div style={{
+                display: 'flex',
                 justifyContent: 'space-between',
                 fontSize: 'clamp(0.8rem, 1vw, 0.85rem)',
-                color: '#6b7280',
+                color: 'var(--text-tertiary)',
                 marginBottom: '1rem',
                 flexWrap: 'wrap',
                 gap: '0.25rem'
@@ -468,7 +505,7 @@ function CourseDetail() {
                 <span>{course.duration || 'N/A'} total</span>
               </div>
             )}
-            
+
             {course.lessons?.map((lesson, index) => (
               <div
                 key={lesson.id}
@@ -476,7 +513,7 @@ function CourseDetail() {
                 style={{
                   padding: 'clamp(0.5rem, 1vw, 0.75rem) clamp(0.75rem, 1.5vw, 1rem)',
                   marginBottom: '0.5rem',
-                  background: activeLesson?.id === lesson.id ? '#f0eeff' : 'transparent',
+                  background: activeLesson?.id === lesson.id ? 'var(--accent-light)' : 'transparent',
                   borderRadius: '8px',
                   cursor: isEnrolled ? 'pointer' : 'default',
                   display: 'flex',
@@ -490,7 +527,7 @@ function CourseDetail() {
                 }}
                 onMouseEnter={(e) => {
                   if (isEnrolled && activeLesson?.id !== lesson.id) {
-                    e.currentTarget.style.background = '#f5f5f5';
+                    e.currentTarget.style.background = 'var(--bg-tertiary)';
                   }
                 }}
                 onMouseLeave={(e) => {
@@ -523,9 +560,9 @@ function CourseDetail() {
                       justifyContent: 'center',
                       width: 'clamp(20px, 2vw, 24px)',
                       height: 'clamp(20px, 2vw, 24px)',
-                      background: '#e5e7eb',
+                      background: 'var(--bg-tertiary)',
                       borderRadius: '50%',
-                      color: '#9ca3af',
+                      color: 'var(--text-muted)',
                       fontSize: 'clamp(10px, 1vw, 12px)',
                       fontWeight: 'bold',
                       flexShrink: 0
@@ -533,8 +570,8 @@ function CourseDetail() {
                       {index + 1}
                     </span>
                   )}
-                  <span style={{ 
-                    color: lesson.isCompleted ? '#34d399' : '#1a1a2e',
+                  <span style={{
+                    color: lesson.isCompleted ? '#34d399' : 'var(--text-primary)',
                     fontWeight: lesson.isCompleted ? '500' : '400',
                     fontSize: 'clamp(0.85rem, 1vw, 0.95rem)',
                     wordBreak: 'break-word'
@@ -543,12 +580,12 @@ function CourseDetail() {
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <span style={{ fontSize: 'clamp(0.7rem, 0.8vw, 0.8rem)', color: '#6b7280' }}>
+                  <span style={{ fontSize: 'clamp(0.7rem, 0.8vw, 0.8rem)', color: 'var(--text-tertiary)' }}>
                     {lesson.duration || 'N/A'}
                   </span>
                   {isEnrolled && lesson.isCompleted && (
-                    <span style={{ 
-                      fontSize: 'clamp(0.6rem, 0.7vw, 0.65rem)', 
+                    <span style={{
+                      fontSize: 'clamp(0.6rem, 0.7vw, 0.65rem)',
                       color: '#34d399',
                       background: '#d1fae5',
                       padding: '0.1rem 0.5rem',
@@ -581,7 +618,7 @@ function CourseDetail() {
                 width: '100%',
                 padding: '0.75rem',
                 marginTop: '1rem',
-                background: showQuiz ? '#6c5ce7' : '#f0eeff',
+                background: showQuiz ? '#6c5ce7' : 'var(--accent-light)',
                 color: showQuiz ? 'white' : '#6c5ce7',
                 border: 'none',
                 borderRadius: '8px',
@@ -597,26 +634,27 @@ function CourseDetail() {
           </div>
         </div>
 
-        {/* Right Column - Active Lesson or Quiz - Responsive */}
+        {/* Right Column - Active Lesson or Quiz */}
         <div>
           {showQuiz ? (
             <div style={{
               padding: 'clamp(1rem, 1.5vw, 1.5rem)',
-              background: '#ffffff',
+              background: 'var(--bg-card)',
               borderRadius: '12px',
-              border: '1px solid #e5e7eb'
+              border: '1px solid var(--border-primary)'
             }}>
-              <h3 style={{ 
-                marginBottom: '1rem', 
-                color: '#1a1a2e',
-                fontSize: 'clamp(1.1rem, 1.5vw, 1.2rem)'
+              <h3 style={{
+                marginBottom: '1rem',
+                color: 'var(--text-primary)',
+                fontSize: 'clamp(1.1rem, 1.5vw, 1.2rem)',
+                marginTop: 0
               }}>
                 📝 Course Quiz
               </h3>
               {course.quiz?.questions ? (
                 <>
-                  <p style={{ 
-                    color: '#6b7280', 
+                  <p style={{
+                    color: 'var(--text-tertiary)',
                     marginBottom: '1.5rem',
                     fontSize: 'clamp(0.9rem, 1vw, 1rem)'
                   }}>
@@ -628,15 +666,15 @@ function CourseDetail() {
                       <div style={{ fontSize: 'clamp(3rem, 5vw, 4rem)', marginBottom: '0.5rem' }}>
                         {quizScore >= 70 ? '🎉' : '📚'}
                       </div>
-                      <h3 style={{ color: '#1a1a2e', marginBottom: '0.5rem' }}>
+                      <h3 style={{ color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
                         {quizScore >= 70 ? 'Quiz Passed!' : 'Keep Learning!'}
                       </h3>
                       <div style={{ fontSize: 'clamp(2rem, 4vw, 3rem)', fontWeight: 'bold', color: '#6c5ce7' }}>
                         {quizScore}%
                       </div>
-                      <p style={{ color: '#6b7280', marginTop: '0.5rem' }}>
-                        {quizScore >= 70 
-                          ? 'Great job! You understand the material well.' 
+                      <p style={{ color: 'var(--text-tertiary)', marginTop: '0.5rem' }}>
+                        {quizScore >= 70
+                          ? 'Great job! You understand the material well.'
                           : 'Review the lessons and try again.'}
                       </p>
                       <button
@@ -655,8 +693,6 @@ function CourseDetail() {
                           fontSize: 'clamp(0.9rem, 1vw, 1rem)',
                           transition: 'all 0.3s ease'
                         }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = '#5a4bd1'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = '#6c5ce7'}
                       >
                         Retry Quiz
                       </button>
@@ -665,9 +701,9 @@ function CourseDetail() {
                     <>
                       {course.quiz.questions.map((q, qIndex) => (
                         <div key={qIndex} style={{ marginBottom: '1.5rem' }}>
-                          <p style={{ 
-                            fontWeight: '500', 
-                            color: '#1a1a2e', 
+                          <p style={{
+                            fontWeight: '500',
+                            color: 'var(--text-primary)',
                             marginBottom: '0.5rem',
                             fontSize: 'clamp(0.9rem, 1vw, 1rem)'
                           }}>
@@ -681,22 +717,13 @@ function CourseDetail() {
                                   display: 'block',
                                   padding: '0.5rem 0.75rem',
                                   marginBottom: '0.25rem',
-                                  background: quizAnswers[qIndex] === oIndex ? '#f0eeff' : 'transparent',
+                                  background: quizAnswers[qIndex] === oIndex ? 'var(--accent-light)' : 'transparent',
                                   borderRadius: '6px',
                                   cursor: 'pointer',
                                   border: quizAnswers[qIndex] === oIndex ? '1px solid #6c5ce7' : '1px solid transparent',
                                   transition: 'all 0.2s ease',
-                                  fontSize: 'clamp(0.85rem, 1vw, 0.95rem)'
-                                }}
-                                onMouseEnter={(e) => {
-                                  if (quizAnswers[qIndex] !== oIndex) {
-                                    e.currentTarget.style.background = '#f5f5f5';
-                                  }
-                                }}
-                                onMouseLeave={(e) => {
-                                  if (quizAnswers[qIndex] !== oIndex) {
-                                    e.currentTarget.style.background = 'transparent';
-                                  }
+                                  fontSize: 'clamp(0.85rem, 1vw, 0.95rem)',
+                                  color: 'var(--text-primary)'
                                 }}
                               >
                                 <input
@@ -719,7 +746,7 @@ function CourseDetail() {
                         style={{
                           width: '100%',
                           padding: '0.75rem',
-                          background: Object.keys(quizAnswers).length < (course.quiz.questions?.length || 0) ? '#e5e7eb' : '#6c5ce7',
+                          background: Object.keys(quizAnswers).length < (course.quiz.questions?.length || 0) ? 'var(--bg-tertiary)' : '#6c5ce7',
                           color: 'white',
                           border: 'none',
                           borderRadius: '8px',
@@ -737,47 +764,48 @@ function CourseDetail() {
                 </>
               ) : (
                 <div style={{ textAlign: 'center', padding: '2rem' }}>
-                  <p style={{ color: '#6b7280' }}>No quiz available for this course yet.</p>
+                  <p style={{ color: 'var(--text-tertiary)' }}>No quiz available for this course yet.</p>
                 </div>
               )}
             </div>
           ) : activeLesson ? (
             <div style={{
               padding: 'clamp(1rem, 1.5vw, 1.5rem)',
-              background: '#ffffff',
+              background: 'var(--bg-card)',
               borderRadius: '12px',
-              border: '1px solid #e5e7eb'
+              border: '1px solid var(--border-primary)'
             }}>
-              <div style={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center', 
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
                 marginBottom: '1rem',
                 flexWrap: 'wrap',
                 gap: '0.5rem'
               }}>
-                <h3 style={{ 
-                  color: '#1a1a2e',
+                <h3 style={{
+                  color: 'var(--text-primary)',
                   fontSize: 'clamp(1rem, 1.3vw, 1.1rem)',
-                  wordBreak: 'break-word'
+                  wordBreak: 'break-word',
+                  margin: 0
                 }}>
                   {activeLesson.title}
                 </h3>
-                <span style={{ color: '#6b7280', fontSize: 'clamp(0.8rem, 0.9vw, 0.9rem)' }}>
+                <span style={{ color: 'var(--text-tertiary)', fontSize: 'clamp(0.8rem, 0.9vw, 0.9rem)' }}>
                   {activeLesson.duration || 'N/A'}
                 </span>
               </div>
-              
+
               <div style={{
-                background: '#fafafa',
+                background: 'var(--bg-secondary)',
                 borderRadius: '8px',
                 padding: 'clamp(2rem, 5vw, 3rem)',
                 textAlign: 'center',
                 marginBottom: '1rem'
               }}>
                 <div style={{ fontSize: 'clamp(3rem, 5vw, 4rem)', marginBottom: '1rem' }}>🎥</div>
-                <p style={{ color: '#6b7280', fontSize: 'clamp(0.9rem, 1vw, 1rem)' }}>Lesson content would appear here</p>
-                <p style={{ fontSize: 'clamp(0.8rem, 0.9vw, 0.85rem)', color: '#9ca3af' }}>
+                <p style={{ color: 'var(--text-tertiary)', fontSize: 'clamp(0.9rem, 1vw, 1rem)' }}>Lesson content would appear here</p>
+                <p style={{ fontSize: 'clamp(0.8rem, 0.9vw, 0.85rem)', color: 'var(--text-muted)' }}>
                   {activeLesson.description || 'No description available'}
                 </p>
               </div>
@@ -800,16 +828,6 @@ function CourseDetail() {
                       fontSize: 'clamp(0.85rem, 1vw, 0.95rem)',
                       minWidth: '120px'
                     }}
-                    onMouseEnter={(e) => {
-                      if (!activeLesson.isCompleted && !isCompleting) {
-                        e.currentTarget.style.background = '#5a4bd1';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!activeLesson.isCompleted && !isCompleting) {
-                        e.currentTarget.style.background = '#6c5ce7';
-                      }
-                    }}
                   >
                     {isCompleting ? 'Processing...' : activeLesson.isCompleted ? '✅ Completed' : '🎯 Mark as Complete'}
                   </button>
@@ -817,16 +835,14 @@ function CourseDetail() {
                     onClick={() => setActiveLesson(null)}
                     style={{
                       padding: '0.75rem 1.5rem',
-                      background: '#f5f5f5',
-                      color: '#6b7280',
-                      border: '1px solid #e5e7eb',
+                      background: 'var(--bg-tertiary)',
+                      color: 'var(--text-secondary)',
+                      border: '1px solid var(--border-primary)',
                       borderRadius: '8px',
                       cursor: 'pointer',
                       transition: 'all 0.3s ease',
                       fontSize: 'clamp(0.85rem, 1vw, 0.95rem)'
                     }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#e5e7eb'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = '#f5f5f5'}
                   >
                     Close
                   </button>
@@ -836,32 +852,32 @@ function CourseDetail() {
           ) : (
             <div style={{
               padding: 'clamp(1.5rem, 2vw, 2rem)',
-              background: '#fafafa',
+              background: 'var(--bg-secondary)',
               borderRadius: '12px',
-              border: '1px solid #e5e7eb',
+              border: '1px solid var(--border-primary)',
               textAlign: 'center'
             }}>
               <div style={{ fontSize: 'clamp(3rem, 5vw, 4rem)', marginBottom: '1rem' }}>📖</div>
-              <h3 style={{ 
-                color: '#1a1a2e', 
+              <h3 style={{
+                color: 'var(--text-primary)',
                 marginBottom: '0.5rem',
                 fontSize: 'clamp(1.1rem, 1.5vw, 1.2rem)'
               }}>
                 Select a lesson to begin
               </h3>
-              <p style={{ 
-                color: '#6b7280',
+              <p style={{
+                color: 'var(--text-tertiary)',
                 fontSize: 'clamp(0.9rem, 1vw, 1rem)'
               }}>
-                {isEnrolled 
-                  ? 'Choose a lesson from the left sidebar or take the quiz to test your knowledge.' 
+                {isEnrolled
+                  ? 'Choose a lesson from the left sidebar or take the quiz to test your knowledge.'
                   : 'Enroll in this course to access lessons and quizzes.'}
               </p>
               {isEnrolled && (
-                <div style={{ 
-                  display: 'flex', 
-                  justifyContent: 'center', 
-                  gap: 'clamp(1rem, 2vw, 2rem)', 
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'center',
+                  gap: 'clamp(1rem, 2vw, 2rem)',
                   marginTop: '1.5rem',
                   flexWrap: 'wrap'
                 }}>
@@ -869,7 +885,7 @@ function CourseDetail() {
                     <div style={{ fontSize: 'clamp(1.2rem, 2vw, 1.5rem)', color: '#6c5ce7' }}>
                       {completedLessons}
                     </div>
-                    <div style={{ fontSize: 'clamp(0.75rem, 0.9vw, 0.85rem)', color: '#6b7280' }}>
+                    <div style={{ fontSize: 'clamp(0.75rem, 0.9vw, 0.85rem)', color: 'var(--text-tertiary)' }}>
                       Lessons Completed
                     </div>
                   </div>
@@ -877,7 +893,7 @@ function CourseDetail() {
                     <div style={{ fontSize: 'clamp(1.2rem, 2vw, 1.5rem)', color: '#6c5ce7' }}>
                       {progress}%
                     </div>
-                    <div style={{ fontSize: 'clamp(0.75rem, 0.9vw, 0.85rem)', color: '#6b7280' }}>
+                    <div style={{ fontSize: 'clamp(0.75rem, 0.9vw, 0.85rem)', color: 'var(--text-tertiary)' }}>
                       Overall Progress
                     </div>
                   </div>
@@ -885,7 +901,7 @@ function CourseDetail() {
                     <div style={{ fontSize: 'clamp(1.2rem, 2vw, 1.5rem)', color: '#6c5ce7' }}>
                       {(course.lessons?.length || 0) - completedLessons}
                     </div>
-                    <div style={{ fontSize: 'clamp(0.75rem, 0.9vw, 0.85rem)', color: '#6b7280' }}>
+                    <div style={{ fontSize: 'clamp(0.75rem, 0.9vw, 0.85rem)', color: 'var(--text-tertiary)' }}>
                       Lessons Remaining
                     </div>
                   </div>

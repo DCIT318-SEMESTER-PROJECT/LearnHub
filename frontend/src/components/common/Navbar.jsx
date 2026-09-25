@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 
 export default function Navbar() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const { user, logout } = useAuth();
+  const { isDark, toggleTheme } = useTheme();
 
   const handleSignOut = () => {
     logout();
@@ -14,8 +16,11 @@ export default function Navbar() {
     setMenuOpen(false);
   };
 
-  const closeMenu = () => {
-    setMenuOpen(false);
+  const closeMenu = () => setMenuOpen(false);
+
+  const capitalize = (str) => {
+    if (!str) return '';
+    return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
   };
 
   const getInitials = () => {
@@ -26,10 +31,7 @@ export default function Navbar() {
     return (first + last).toUpperCase() || 'U';
   };
 
-  const getFullName = () => {
-    if (!user) return 'User';
-    return `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'User';
-  };
+  const isInstructor = user?.role === 'Instructor' || user?.isInstructor;
 
   return (
     <nav className="navbar">
@@ -39,31 +41,78 @@ export default function Navbar() {
           <span className="brand-name">LearnHub</span>
         </Link>
 
+        {/* Desktop nav links */}
         <div className="navbar-links desktop-nav">
-          <Link to="/courses" className={`nav-link ${pathname === '/courses' ? 'active' : ''}`}>Courses</Link>
-          <Link to="/study-groups" className={`nav-link ${pathname === '/study-groups' ? 'active' : ''}`}>Study Groups</Link>
-          <Link to="/dashboard" className={`nav-link ${pathname === '/dashboard' ? 'active' : ''}`}>Dashboard</Link>
+          <Link to="/courses" className={`nav-link ${pathname === '/courses' ? 'active' : ''}`}>
+            Courses
+          </Link>
+
+          {!isInstructor && (
+            <Link 
+              to="/study-groups" 
+              className={`nav-link ${pathname === '/study-groups' ? 'active' : ''}`}
+            >
+              Study Groups
+            </Link>
+          )}
+
+          <Link 
+            to="/dashboard" 
+            className={`nav-link ${pathname === '/dashboard' ? 'active' : ''}`}
+          >
+            Dashboard
+          </Link>
+
+          {isInstructor && (
+            <Link 
+              to="/instructor/create-course" 
+              className={`nav-link ${pathname === '/instructor/create-course' ? 'active' : ''}`}
+            >
+              + Create Course
+            </Link>
+          )}
         </div>
 
         <div className="navbar-actions desktop-actions">
-          {user ? (
-            <Link to="/profile" className="user-avatar" style={{
+          {/* Theme Toggle */}
+          <button
+            onClick={toggleTheme}
+            aria-label="Toggle theme"
+            title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            style={{
+              background: isDark ? '#2d3244' : '#f0eeff',
+              color: isDark ? '#fbbf24' : '#6c5ce7',
+              border: 'none',
+              borderRadius: '50%',
+              width: '40px',
+              height: '40px',
               display: 'flex',
               alignItems: 'center',
-              gap: '0.5rem',
-              textDecoration: 'none',
-              padding: '0.25rem 0.75rem',
-              borderRadius: '20px',
-              background: '#f0eeff',
-              color: '#6c5ce7',
-              transition: 'all 0.2s'
+              justifyContent: 'center',
+              cursor: 'pointer',
+              fontSize: '1.1rem',
+              transition: 'all 0.3s ease',
+              marginRight: '0.25rem'
             }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = '#e8e0ff';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = '#f0eeff';
-            }}
+          >
+            {isDark ? '☀️' : '🌙'}
+          </button>
+
+          {user ? (
+            <Link 
+              to="/profile" 
+              className="user-avatar" 
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                textDecoration: 'none',
+                padding: '0.25rem 0.75rem',
+                borderRadius: '20px',
+                background: 'var(--bg-accent)',
+                color: '#6c5ce7',
+                transition: 'all 0.2s'
+              }}
             >
               <div style={{
                 width: '32px',
@@ -71,19 +120,20 @@ export default function Navbar() {
                 borderRadius: '50%',
                 background: user.avatarUrl 
                   ? `url(${user.avatarUrl}) center/cover no-repeat` 
-                  : '#6c5ce7',
+                  : 'linear-gradient(135deg, #6c5ce7, #5a4bd1)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontWeight: 'bold',
                 fontSize: '0.85rem',
                 flexShrink: 0,
-                color: 'white'
+                color: 'white',
+                overflow: 'hidden'
               }}>
                 {!user.avatarUrl && (user.firstName?.[0] || 'U')}
               </div>
               <span style={{ fontSize: '0.9rem' }}>
-                {user.firstName || 'User'}
+                {capitalize(user.firstName) || 'User'}
               </span>
             </Link>
           ) : (
@@ -94,7 +144,11 @@ export default function Navbar() {
           )}
         </div>
 
-        <button className="hamburger" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle menu">
+        <button 
+          className="hamburger" 
+          onClick={() => setMenuOpen(!menuOpen)} 
+          aria-label="Toggle menu"
+        >
           {menuOpen ? '✕' : '☰'}
         </button>
       </div>
@@ -106,22 +160,51 @@ export default function Navbar() {
           top: '64px',
           left: 0,
           right: 0,
-          background: '#ffffff',
-          borderBottom: '1px solid #eee',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+          background: 'var(--bg-primary)',
+          borderBottom: '1px solid var(--border-primary)',
+          boxShadow: 'var(--shadow-md)',
           padding: '1rem',
           zIndex: 1000,
           display: 'flex',
           flexDirection: 'column',
-          gap: '0.5rem'
+          gap: '0.5rem',
+          maxHeight: 'calc(100vh - 64px)',
+          overflowY: 'auto'
         }}>
+          {/* Theme Toggle */}
+          <button
+            onClick={() => {
+              toggleTheme();
+              closeMenu();
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem',
+              padding: '0.75rem 1rem',
+              background: 'var(--bg-accent)',
+              color: '#6c5ce7',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '0.95rem',
+              fontWeight: '500',
+              textAlign: 'left',
+              width: '100%',
+              marginBottom: '0.25rem'
+            }}
+          >
+            {isDark ? '☀️ Light Mode' : '🌙 Dark Mode'}
+          </button>
+
+          {/* User card */}
           {user && (
             <div style={{
               display: 'flex',
               alignItems: 'center',
               gap: '0.75rem',
               padding: '0.75rem',
-              background: '#f5f5f5',
+              background: 'var(--bg-tertiary)',
               borderRadius: '10px',
               marginBottom: '0.5rem'
             }}>
@@ -131,82 +214,126 @@ export default function Navbar() {
                 borderRadius: '50%',
                 background: user.avatarUrl 
                   ? `url(${user.avatarUrl}) center/cover no-repeat` 
-                  : '#6c5ce7',
+                  : 'linear-gradient(135deg, #6c5ce7, #5a4bd1)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontWeight: 'bold',
                 fontSize: '1rem',
                 flexShrink: 0,
-                color: 'white'
+                color: 'white',
+                overflow: 'hidden'
               }}>
                 {!user.avatarUrl && getInitials()}
               </div>
               <div>
-                <div style={{ fontWeight: '600', fontSize: '0.95rem', color: '#1a1a2e' }}>
-                  {getFullName()}
+                <div style={{ fontWeight: '600', fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+                  {capitalize(user.firstName)} {capitalize(user.lastName)}
                 </div>
-                <div style={{ fontSize: '0.8rem', color: '#666' }}>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>
                   {user.email}
                 </div>
               </div>
             </div>
           )}
 
-          <Link to="/courses" className="mobile-nav-link" onClick={closeMenu} style={{
-            padding: '0.75rem 1rem',
-            color: pathname === '/courses' ? '#6c5ce7' : '#1a1a2e',
-            background: pathname === '/courses' ? '#f0eeff' : 'transparent',
-            borderRadius: '8px',
-            textDecoration: 'none',
-            display: 'block',
-            fontWeight: pathname === '/courses' ? '600' : '400'
-          }}>
-            📚 Courses          </Link>
-
-          <Link to="/study-groups" className="mobile-nav-link" onClick={closeMenu} style={{
-            padding: '0.75rem 1rem',
-            color: pathname === '/study-groups' ? '#6c5ce7' : '#1a1a2e',
-            background: pathname === '/study-groups' ? '#f0eeff' : 'transparent',
-            borderRadius: '8px',
-            textDecoration: 'none',
-            display: 'block',
-            fontWeight: pathname === '/study-groups' ? '600' : '400'
-          }}>
-            👥 Study Groups
+          {/* Nav links */}
+          <Link 
+            to="/courses" 
+            className="mobile-nav-link" 
+            onClick={closeMenu}
+            style={{
+              padding: '0.75rem 1rem',
+              color: pathname === '/courses' ? '#6c5ce7' : 'var(--text-primary)',
+              background: pathname === '/courses' ? 'var(--bg-hover)' : 'transparent',
+              borderRadius: '8px',
+              textDecoration: 'none',
+              display: 'block',
+              fontWeight: pathname === '/courses' ? '600' : '400'
+            }}
+          >
+            📚 Courses
           </Link>
 
-          <Link to="/dashboard" className="mobile-nav-link" onClick={closeMenu} style={{
-            padding: '0.75rem 1rem',
-            color: pathname === '/dashboard' ? '#6c5ce7' : '#1a1a2e',
-            background: pathname === '/dashboard' ? '#f0eeff' : 'transparent',
-            borderRadius: '8px',
-            textDecoration: 'none',
-            display: 'block',
-            fontWeight: pathname === '/dashboard' ? '600' : '400'
-          }}>
-            📊 Dashboard
-          </Link>
-
-          {user && (
-            <>
-              <Link to="/profile" className="mobile-nav-link" onClick={closeMenu} style={{
+          {!isInstructor && (
+            <Link 
+              to="/study-groups" 
+              className="mobile-nav-link" 
+              onClick={closeMenu}
+              style={{
                 padding: '0.75rem 1rem',
+                color: pathname === '/study-groups' ? '#6c5ce7' : 'var(--text-primary)',
+                background: pathname === '/study-groups' ? 'var(--bg-hover)' : 'transparent',
                 borderRadius: '8px',
                 textDecoration: 'none',
                 display: 'block',
-                color: '#1a1a2e'
-              }}>
+                fontWeight: pathname === '/study-groups' ? '600' : '400'
+              }}
+            >
+              👥 Study Groups
+            </Link>
+          )}
+
+          <Link 
+            to="/dashboard" 
+            className="mobile-nav-link" 
+            onClick={closeMenu}
+            style={{
+              padding: '0.75rem 1rem',
+              color: pathname === '/dashboard' ? '#6c5ce7' : 'var(--text-primary)',
+              background: pathname === '/dashboard' ? 'var(--bg-hover)' : 'transparent',
+              borderRadius: '8px',
+              textDecoration: 'none',
+              display: 'block',
+              fontWeight: pathname === '/dashboard' ? '600' : '400'
+            }}
+          >
+            📊 Dashboard
+          </Link>
+
+          {isInstructor && (
+            <Link 
+              to="/instructor/create-course" 
+              className="mobile-nav-link" 
+              onClick={closeMenu}
+              style={{
+                padding: '0.75rem 1rem',
+                color: pathname === '/instructor/create-course' ? '#6c5ce7' : 'var(--text-primary)',
+                background: pathname === '/instructor/create-course' ? 'var(--bg-hover)' : 'transparent',
+                borderRadius: '8px',
+                textDecoration: 'none',
+                display: 'block',
+                fontWeight: pathname === '/instructor/create-course' ? '600' : '400'
+              }}
+            >
+              ➕ Create Course
+            </Link>
+          )}
+
+          {user && (
+            <>
+              <Link 
+                to="/profile" 
+                className="mobile-nav-link" 
+                onClick={closeMenu}
+                style={{
+                  padding: '0.75rem 1rem',
+                  borderRadius: '8px',
+                  textDecoration: 'none',
+                  display: 'block',
+                  color: 'var(--text-primary)'
+                }}
+              >
                 👤 Profile
               </Link>
 
-              <div style={{ borderTop: '1px solid #eeecfb', margin: '0.25rem 0' }} />
+              <div style={{ borderTop: '1px solid var(--border-primary)', margin: '0.25rem 0' }} />
 
               <button
                 onClick={handleSignOut}
                 style={{
                   padding: '0.75rem 1rem',
-                  color: '#ef4444',
+                  color: 'var(--error)',
                   background: 'none',
                   border: 'none',
                   textAlign: 'left',
@@ -216,11 +343,8 @@ export default function Navbar() {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '0.75rem',
-                  width: '100%',
-                  transition: 'background 0.2s'
+                  width: '100%'
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.background = '#fef2f2'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
               >
                 🚪 Sign Out
               </button>
