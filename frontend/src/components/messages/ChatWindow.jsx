@@ -132,7 +132,7 @@ export default function ChatWindow() {
 
   const handleSend = async (e) => {
     e?.preventDefault?.();
-    if ((!input.trim() && !pendingAttachment) || sending) return;
+    if ((!input.trim() && !pendingAttachment) || sending || !openChatUserId) return;
 
     const body = input.trim();
     const attachment = pendingAttachment;
@@ -155,7 +155,6 @@ export default function ChatWindow() {
 
     try {
       await sendMessage(openChatUserId, body, attachment);
-      // Reload from server to get real ids/timestamps
       const { data } = await getThread(openChatUserId);
       setMessages(data.messages || []);
     } catch (err) {
@@ -182,7 +181,7 @@ export default function ChatWindow() {
         borderRadius: '16px',
         boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
         border: '1px solid var(--border-primary)',
-        zIndex: 1200,
+        zIndex: 1600,
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',

@@ -51,7 +51,6 @@ export default function InboxDrawer({ onClose }) {
         onClose();
       }
     };
-    // Delay to avoid the click that opened the drawer from immediately closing it
     const t = setTimeout(() => document.addEventListener('mousedown', onClick), 0);
     return () => {
       clearTimeout(t);
@@ -60,8 +59,10 @@ export default function InboxDrawer({ onClose }) {
   }, [onClose]);
 
   const openConversation = (c) => {
+    // Fire the chat state first
     openChat(c.user.id, c.user);
-    onClose();
+    // Then close the drawer on the next tick, so both states apply cleanly
+    setTimeout(() => onClose(), 0);
   };
 
   return (
