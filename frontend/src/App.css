@@ -65,7 +65,6 @@
   --border-input: #3a3a5a;
   --border-hover: #6c5ce7;
 
-  /* ✅ Same accent as light mode */
   --accent: #6c5ce7;
   --accent-hover: #5a4bd1;
   --accent-light: rgba(108, 92, 231, 0.15);
@@ -102,15 +101,19 @@
    ═══════════════════════════════════════════════════ */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-html, body {
+html, body, #root {
   width: 100%;
-  overflow-x: hidden;
+  min-height: 100vh;
   background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+html, body {
+  overflow-x: hidden;
 }
 
 body {
   font-family: 'Inter', 'Segoe UI', sans-serif;
-  color: var(--text-primary);
 }
 
 a { text-decoration: none; color: inherit; }
@@ -243,6 +246,7 @@ p { line-height: 1.7; }
   min-height: 100vh;
   background: var(--bg-primary);
   flex: 1;
+  position: relative;
 }
 
 /* ═══════════════════════════════════════════════════
@@ -259,6 +263,9 @@ p { line-height: 1.7; }
   gap: 4rem;
   min-height: calc(100vh - 64px);
   background: var(--bg-primary);
+  position: relative;
+  overflow: hidden;
+  z-index: 1;
 }
 
 .hero-content {
@@ -267,6 +274,8 @@ p { line-height: 1.7; }
   flex-direction: column;
   gap: 1.5rem;
   max-width: 550px;
+  position: relative;
+  z-index: 1;
 }
 
 .hero-badge {
@@ -361,6 +370,7 @@ p { line-height: 1.7; }
   position: relative;
   max-width: 450px;
   min-width: 350px;
+  z-index: 1;
 }
 
 .streak-chip {
@@ -973,7 +983,6 @@ p { line-height: 1.7; }
   line-height: 1.3;
 }
 
-/* Keep snapshot card vibrant in dark mode too */
 .dark-theme .user-snapshot-card {
   background: #ffffff;
   border-color: #eef0f4;
@@ -1223,4 +1232,247 @@ p { line-height: 1.7; }
   .snapshot-stat { flex-direction: column; text-align: center; padding: 0.6rem 0.4rem; }
   .snapshot-header { flex-direction: column; text-align: center; }
   .snapshot-info h3 { font-size: 1rem; }
+}
+
+/* ═══════════════════════════════════════════════════════
+   ANIMATED BACKGROUND ORBS (clipped to hero)
+   ═══════════════════════════════════════════════════════ */
+.bg-orbs {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.32;
+  will-change: transform;
+}
+
+.orb-1 {
+  width: 520px;
+  height: 520px;
+  top: -140px;
+  right: -120px;
+  background: radial-gradient(circle, #6c5ce7 0%, transparent 70%);
+  animation: floatOrb1 24s ease-in-out infinite;
+}
+
+.orb-2 {
+  width: 440px;
+  height: 440px;
+  bottom: -120px;
+  left: -140px;
+  background: radial-gradient(circle, #a29bfe 0%, transparent 70%);
+  animation: floatOrb2 30s ease-in-out infinite;
+}
+
+.orb-3 {
+  width: 360px;
+  height: 360px;
+  top: 45%;
+  right: 25%;
+  background: radial-gradient(circle, #00b894 0%, transparent 70%);
+  opacity: 0.2;
+  animation: floatOrb3 34s ease-in-out infinite;
+}
+
+@keyframes floatOrb1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%      { transform: translate(-70px, 50px) scale(1.1); }
+}
+@keyframes floatOrb2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%      { transform: translate(80px, -50px) scale(1.05); }
+}
+@keyframes floatOrb3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(-50px, -40px) scale(1.12); }
+  66%      { transform: translate(50px, 40px) scale(0.95); }
+}
+
+/* ═══════════════════════════════════════════════════════
+   LIVE ACTIVITY POP CARD (top-right corner)
+   ═══════════════════════════════════════════════════════ */
+.pop-activity-wrap {
+  position: fixed;
+  top: 84px;
+  right: 24px;
+  z-index: 1100;
+  pointer-events: none;
+  width: min(360px, calc(100vw - 32px));
+}
+
+.pop-activity-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-primary);
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.08);
+  pointer-events: auto;
+
+  opacity: 0;
+  transform: translateY(-16px) scale(0.96);
+  transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+
+.pop-activity-card.is-visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.pop-activity-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--accent-light);
+  color: #6c5ce7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+  flex-shrink: 0;
+}
+
+.pop-activity-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.pop-activity-text {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.35;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.pop-activity-time {
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+}
+
+.pop-activity-pulse {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #34d399;
+  top: 10px;
+  right: 10px;
+  box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7);
+  animation: pulseDot 2s ease-in-out infinite;
+}
+
+@keyframes pulseDot {
+  0%   { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7); }
+  70%  { box-shadow: 0 0 0 10px rgba(52, 211, 153, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+}
+
+.dark-theme .pop-activity-card,
+[data-theme="dark"] .pop-activity-card {
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+@media (max-width: 640px) {
+  .pop-activity-wrap {
+    top: 72px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+  }
+  .pop-activity-text {
+    font-size: 0.82rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb {
+    animation: none !important;
+  }
+  .pop-activity-card {
+    transition: none;
+  }
+  .pop-activity-pulse {
+    animation: none;
+  }
+}
+/* ═══════════════════════════════════════════════════════
+   ATTENTION-GRABBING PRIMARY CTA
+   Only applies to .cta-primary inside .hero and .cta-banner
+   ═══════════════════════════════════════════════════════ */
+
+/* Hero "Get Started" + CTA banner "Create Account" */
+.hero .cta-primary,
+.cta-banner .cta-primary {
+  position: relative;
+  animation: ctaBounce 2.4s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* Pulsing purple halo — sits behind the button via box-shadow */
+.hero .cta-primary {
+  box-shadow: 0 0 0 0 rgba(108, 92, 231, 0.5);
+  animation: ctaBounce 2.4s ease-in-out infinite,
+             ctaGlow 2.4s ease-in-out infinite;
+}
+
+/* CTA banner button is already on a purple background, so use a white glow */
+.cta-banner .cta-primary {
+  background: #ffffff;
+  color: #6c5ce7;
+  animation: ctaBounce 2.4s ease-in-out infinite,
+             ctaGlowLight 2.4s ease-in-out infinite;
+}
+
+/* Pause the animation while the user hovers — feels respectful */
+.hero .cta-primary:hover,
+.cta-banner .cta-primary:hover {
+  animation-play-state: paused;
+  transform: translateY(-3px) scale(1.03);
+  transition: transform 0.2s ease;
+}
+
+/* ── Keyframes ── */
+
+/* Gentle bob */
+@keyframes ctaBounce {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-4px); }
+}
+
+/* Purple pulse (hero button, dark+light both work) */
+@keyframes ctaGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(108, 92, 231, 0.45); }
+  50%      { box-shadow: 0 0 0 12px rgba(108, 92, 231, 0); }
+}
+
+@keyframes ctaBounce {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50%      { transform: translateY(-5px) scale(1.02); }
+}
+
+/* ── Reduced motion safety ── */
+@media (prefers-reduced-motion: reduce) {
+  .hero .cta-primary,
+  .cta-banner .cta-primary {
+    animation: none !important;
+  }
 }

@@ -1,5 +1,6 @@
 import api from './axiosConfig';
 
+// ─── Groups ─────────────────────────────────────────────
 export const getStudyGroups = (params = {}) =>
   api.get('/study-groups', { params });
 
@@ -21,8 +22,21 @@ export const leaveStudyGroup = (groupId) =>
 export const deleteStudyGroup = (groupId) =>
   api.delete(`/study-groups/${groupId}/delete`);
 
+// ─── Messages ───────────────────────────────────────────
 export const getGroupMessages = (groupId, limit = 50) =>
   api.get(`/study-groups/${groupId}/messages`, { params: { limit } });
 
-export const sendGroupMessage = (groupId, message) =>
-  api.post(`/study-groups/${groupId}/messages`, { message });
+export const sendGroupMessage = (groupId, message, attachment = null) =>
+  api.post(`/study-groups/${groupId}/messages`, {
+    message,
+    ...(attachment ? { attachment } : {}),
+  });
+
+// ─── Members ────────────────────────────────────────────
+export const getMemberPreviews = (groupIds) =>
+  api.get('/study-groups/members/preview', {
+    params: { groupIds: Array.isArray(groupIds) ? groupIds.join(',') : groupIds },
+  });
+
+export const getMemberProfile = (userId) =>
+  api.get(`/study-groups/members/${userId}/profile`);

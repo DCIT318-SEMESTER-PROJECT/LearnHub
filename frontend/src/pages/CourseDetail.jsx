@@ -5,11 +5,20 @@ import { getCurrentUser } from '../api/authAPI';
 import Celebration from '../components/common/Celebration';
 import InstructorCard from '../components/common/InstructorCard';
 import ConfirmDialog from '../components/common/ConfirmDialog';
+import MarkdownLite from '../components/common/MarkdownLite';
 import { useToast } from '../context/ToastContext';
 
 const isImageUrl = (url) => {
   if (!url || typeof url !== 'string') return false;
   return url.startsWith('data:image') || url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/');
+};
+
+// Rough read-time estimate at ~200 words/min
+const estimateReadTime = (text) => {
+  if (!text) return null;
+  const words = text.trim().split(/\s+/).length;
+  const mins = Math.max(1, Math.round(words / 200));
+  return `${mins} min read`;
 };
 
 function CourseDetail() {
@@ -93,7 +102,6 @@ function CourseDetail() {
     }
   };
 
-  // ⭐ The real fix: nudge the user toward the Enroll button instead of "localhost says..."
   const requireEnrollment = (reason) => {
     toast.warning(reason);
     if (enrollButtonRef.current) {
@@ -156,11 +164,10 @@ function CourseDetail() {
       }
 
       try {
-        const response = await api.put(`/courses/lessons/${lessonId}/progress`, {
+        await api.put(`/courses/lessons/${lessonId}/progress`, {
           completed: true,
           watchTime: 300,
         });
-        console.log('✅ Progress update response:', response.data);
       } catch (err) {
         console.warn('⚠️ API error on complete:', err);
       }
@@ -535,7 +542,7 @@ function CourseDetail() {
                   }
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
                   {lesson.isCompleted ? (
                     <span style={{
                       display: 'inline-flex',
@@ -766,32 +773,73 @@ function CourseDetail() {
               }}>
                 <h3 style={{
                   color: 'var(--text-primary)',
-                  fontSize: 'clamp(1rem, 1.3vw, 1.1rem)',
+                  fontSize: 'clamp(1.1rem, 1.4vw, 1.25rem)',
                   wordBreak: 'break-word',
                   margin: 0,
+                  fontWeight: 700,
                 }}>
                   {activeLesson.title}
                 </h3>
-                <span style={{ color: 'var(--text-tertiary)', fontSize: 'clamp(0.8rem, 0.9vw, 0.9rem)' }}>
-                  {activeLesson.duration || 'N/A'}
-                </span>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                  {activeLesson.duration && (
+                    <span style={{
+                      fontSize: '0.72rem',
+                      color: 'var(--text-tertiary)',
+                      padding: '0.2rem 0.6rem',
+                      background: 'var(--bg-tertiary)',
+                      borderRadius: '20px',
+                      fontWeight: 600,
+                    }}>
+                      ⏱️ {activeLesson.duration}
+                    </span>
+                  )}
+                  {activeLesson.content && estimateReadTime(activeLesson.content) && (
+                    <span style={{
+                      fontSize: '0.72rem',
+                      color: 'var(--text-tertiary)',
+                      padding: '0.2rem 0.6rem',
+                      background: 'var(--bg-tertiary)',
+                      borderRadius: '20px',
+                      fontWeight: 600,
+                    }}>
+                      📖 {estimateReadTime(activeLesson.content)}
+                    </span>
+                  )}
+                </div>
               </div>
 
-              <div style={{
-                background: 'var(--bg-secondary)',
-                borderRadius: '8px',
-                padding: 'clamp(2rem, 5vw, 3rem)',
-                textAlign: 'center',
-                marginBottom: '1rem',
-              }}>
-                <div style={{ fontSize: 'clamp(3rem, 5vw, 4rem)', marginBottom: '1rem' }}>🎥</div>
-                <p style={{ color: 'var(--text-tertiary)', fontSize: 'clamp(0.9rem, 1vw, 1rem)' }}>
-                  Lesson content would appear here
-                </p>
-                <p style={{ fontSize: 'clamp(0.8rem, 0.9vw, 0.85rem)', color: 'var(--text-muted)' }}>
-                  {activeLesson.description || 'No description available'}
-                </p>
-              </div>
+              {/* Lesson content */}
+              {activeLesson.content ? (
+                <div
+                  style={{
+                    padding: 'clamp(1rem, 2vw, 1.75rem)',
+                    background: 'var(--bg-secondary)',
+                    borderRadius: '12px',
+                    border: '1px solid var(--border-primary)',
+                    marginBottom: '1rem',
+                    maxHeight: '560px',
+                    overflowY: 'auto',
+                  }}
+                >
+                  <MarkdownLite source={activeLesson.content} />
+                </div>
+              ) : (
+                <div style={{
+                  padding: 'clamp(2rem, 5vw, 3rem)',
+                  background: 'var(--bg-secondary)',
+                  borderRadius: '8px',
+                  textAlign: 'center',
+                  marginBottom: '1rem',
+                }}>
+                  <div style={{ fontSize: 'clamp(3rem, 5vw, 4rem)', marginBottom: '1rem' }}>📄</div>
+                  <p style={{ color: 'var(--text-tertiary)', fontSize: 'clamp(0.9rem, 1vw, 1rem)', marginBottom: '0.25rem' }}>
+                    No content added to this lesson yet.
+                  </p>
+                  <p style={{ fontSize: 'clamp(0.8rem, 0.9vw, 0.85rem)', color: 'var(--text-muted)' }}>
+                    {activeLesson.description || 'The instructor hasn\'t written the lesson content.'}
+                  </p>
+                </div>
+              )}
 
               {isEnrolled && (
                 <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
@@ -809,6 +857,7 @@ function CourseDetail() {
                       opacity: isCompleting ? 0.7 : 1,
                       fontSize: 'clamp(0.85rem, 1vw, 0.95rem)',
                       minWidth: '120px',
+                      fontWeight: 600,
                     }}
                   >
                     {isCompleting ? 'Processing...' : activeLesson.isCompleted ? '✅ Completed' : '🎯 Mark as Complete'}

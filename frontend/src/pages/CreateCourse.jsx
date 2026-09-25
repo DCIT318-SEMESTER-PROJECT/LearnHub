@@ -3,7 +3,10 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import ConfirmDialog from '../components/common/ConfirmDialog';
+import QuizGeneratorModal from '../components/common/QuizGeneratorModal';
+import OutlineImporterModal from '../components/common/OutlineImporterModal';
 import api from '../api/axiosConfig';
+import { saveQuiz } from '../api/quizAPI';
 import {
   createCourse,
   updateCourse,
@@ -11,8 +14,10 @@ import {
   addModule,
   deleteModule,
   addLesson,
+  updateLesson,
   deleteLesson,
   publishCourse,
+  bulkCreateModules,
 } from '../api/coursesAPI';
 
 const CATEGORIES = [
@@ -31,6 +36,8 @@ const STEPS = [
   { num: 4, label: 'Curriculum',  icon: '📚' },
   { num: 5, label: 'Publish',     icon: '🚀' },
 ];
+
+const EMPTY_LESSON = { title: '', duration: '10 min', content: '' };
 
 function CreateCourse() {
   const navigate = useNavigate();
@@ -61,16 +68,20 @@ function CreateCourse() {
   const [modules, setModules] = useState([]);
   const [newModuleTitle, setNewModuleTitle] = useState('');
   const [newModuleDesc, setNewModuleDesc] = useState('');
-  const [addingLessonTo, setAddingLessonTo] = useState(null);
-  const [newLessonTitle, setNewLessonTitle] = useState('');
-  const [newLessonDuration, setNewLessonDuration] = useState('10 min');
+
+  const [lessonForm, setLessonForm] = useState(null);
   const [errors, setErrors] = useState({});
-
-  // Confirm dialog state — null = hidden, otherwise { type, moduleId?, lessonId? }
   const [confirmDelete, setConfirmDelete] = useState(null);
-
-  // AI description generation
   const [generatingDescription, setGeneratingDescription] = useState(false);
+
+  const [generatingQuizFor, setGeneratingQuizFor] = useState(null);
+  const [quizModal, setQuizModal] = useState(null);
+  const [savingQuiz, setSavingQuiz] = useState(false);
+  const [courseHasQuiz, setCourseHasQuiz] = useState(false);
+
+  // Phase 3 — outline importer
+  const [showOutlineImporter, setShowOutlineImporter] = useState(false);
+  const [importingOutline, setImportingOutline] = useState(false);
 
   useEffect(() => {
     if (editCourseId) loadCourseForEdit();
@@ -95,6 +106,12 @@ function CreateCourse() {
       });
       setModules(data.modules || []);
       setCourseId(data.id);
+
+      try {
+        const { getQuizByCourse } = await import('../api/quizAPI');
+        const quizRes = await getQuizByCourse(data.id);
+        if (quizRes.data?.questions?.length > 0) setCourseHasQuiz(true);
+      } catch (_) {}
     } catch (err) {
       console.error('Error loading course:', err);
       toast.error('Failed to load course');
@@ -132,6 +149,92 @@ function CreateCourse() {
     }
   };
 
+  // ─── AI quiz ────────────────────────────────────────────
+  const handleGenerateQuiz = async (lesson) => {
+    if (!lesson.content || !lesson.content.trim()) {
+      toast.error('This lesson has no content yet — add content first');
+      return;
+    }
+    if (!courseId) {
+      toast.error('Save basics first');
+      return;
+    }
+
+    try {
+      setGeneratingQuizFor(lesson.id);
+      const { data } = await api.post('/ai/generate-quiz', {
+        lessonTitle: lesson.title,
+        lessonContent: lesson.content,
+        courseCategory: courseData.category,
+        questionCount: 5,
+      });
+
+      setQuizModal({ lessonId: lesson.id, questions: data.questions, mode: 'ai' });
+    } catch (err) {
+      console.error('AI quiz error:', err);
+      toast.error(err.response?.data?.error || 'Failed to generate quiz');
+    } finally {
+      setGeneratingQuizFor(null);
+    }
+  };
+
+  // ─── Manual quiz ────────────────────────────────────────
+  const handleWriteManualQuiz = () => {
+    if (!courseId) {
+      toast.error('Save basics first');
+      return;
+    }
+    setQuizModal({
+      lessonId: null,
+      mode: 'manual',
+      questions: [
+        {
+          id: `q-manual-${Date.now()}`,
+          question: '',
+          option1: '',
+          option2: '',
+          option3: '',
+          option4: '',
+          correctOption: 0,
+        },
+      ],
+    });
+  };
+
+  const handleSaveQuiz = async (questions) => {
+    if (!courseId) return;
+    try {
+      setSavingQuiz(true);
+      await saveQuiz(courseId, questions, `${courseData.title || 'Course'} Quiz`);
+      setCourseHasQuiz(true);
+      setQuizModal(null);
+      toast.success(`Quiz saved — ${questions.length} question${questions.length === 1 ? '' : 's'}`);
+    } catch (err) {
+      console.error('Save quiz error:', err);
+      toast.error(err.response?.data?.error || 'Failed to save quiz');
+    } finally {
+      setSavingQuiz(false);
+    }
+  };
+
+  // ─── Phase 3: outline import ────────────────────────────
+  const handleImportOutline = async (outlineModules) => {
+    if (!courseId) return toast.error('Save basics first');
+    try {
+      setImportingOutline(true);
+      const { data } = await bulkCreateModules(courseId, outlineModules);
+      const fresh = await getCourseForEdit(courseId);
+      setModules(fresh.data.modules || []);
+      setShowOutlineImporter(false);
+      toast.success(`Imported ${data.created} modules · ${data.totalLessons} lessons`);
+    } catch (err) {
+      console.error('Import error:', err);
+      toast.error(err.response?.data?.error || 'Failed to import modules');
+    } finally {
+      setImportingOutline(false);
+    }
+  };
+
   const handleImageFile = (file) => {
     if (!file) return;
     if (!file.type.startsWith('image/')) {
@@ -157,7 +260,6 @@ function CreateCourse() {
     handleImageFile(e.dataTransfer.files?.[0]);
   };
 
-  // ─── SAVE STEPS ──────────────────────────────────────────
   const saveBasicInfo = async () => {
     const newErrors = {};
     if (!courseData.title.trim()) newErrors.title = 'Title is required';
@@ -222,7 +324,6 @@ function CreateCourse() {
     }
   };
 
-  // ─── MODULES & LESSONS ───────────────────────────────────
   const handleAddModule = async () => {
     if (!newModuleTitle.trim()) return toast.error('Module title is required');
     if (!courseId) return toast.error('Save basics first');
@@ -243,43 +344,92 @@ function CreateCourse() {
     }
   };
 
-  const handleAddLesson = async (moduleId) => {
-    if (!newLessonTitle.trim()) return toast.error('Lesson title is required');
+  const openAddLesson = (moduleId) => {
+    setLessonForm({ mode: 'add', moduleId, data: { ...EMPTY_LESSON } });
+  };
+
+  const openEditLesson = (moduleId, lesson) => {
+    setLessonForm({
+      mode: 'edit',
+      moduleId,
+      lessonId: lesson.id,
+      data: {
+        title: lesson.title || '',
+        duration: lesson.duration || '10 min',
+        content: lesson.content || '',
+      },
+    });
+  };
+
+  const closeLessonForm = () => setLessonForm(null);
+
+  const handleLessonFormChange = (field, value) => {
+    setLessonForm((f) => (f ? { ...f, data: { ...f.data, [field]: value } } : f));
+  };
+
+  const submitLessonForm = async () => {
+    if (!lessonForm) return;
+    const { mode, moduleId, lessonId, data } = lessonForm;
+
+    if (!data.title.trim()) return toast.error('Lesson title is required');
+
     try {
       setSaving(true);
-      const response = await addLesson(courseId, {
-        moduleId,
-        title: newLessonTitle,
-        duration: newLessonDuration,
-        isFree: 1,
-      });
-      setModules(
-        modules.map((m) =>
-          m.id === moduleId ? { ...m, lessons: [...(m.lessons || []), response.data] } : m
-        )
-      );
-      setNewLessonTitle('');
-      setNewLessonDuration('10 min');
-      setAddingLessonTo(null);
-      toast.success('Lesson added');
+
+      if (mode === 'add') {
+        const response = await addLesson(courseId, {
+          moduleId,
+          title: data.title,
+          duration: data.duration,
+          content: data.content,
+          isFree: 1,
+        });
+        setModules(
+          modules.map((m) =>
+            m.id === moduleId
+              ? { ...m, lessons: [...(m.lessons || []), response.data] }
+              : m
+          )
+        );
+        toast.success('Lesson added');
+      } else {
+        const response = await updateLesson(lessonId, {
+          title: data.title,
+          duration: data.duration,
+          content: data.content,
+        });
+        setModules(
+          modules.map((m) =>
+            m.id === moduleId
+              ? {
+                  ...m,
+                  lessons: (m.lessons || []).map((l) =>
+                    l.id === lessonId ? { ...l, ...response.data } : l
+                  ),
+                }
+              : m
+          )
+        );
+        toast.success('Lesson updated');
+      }
+
+      setLessonForm(null);
     } catch (err) {
-      toast.error('Failed to add lesson');
+      console.error('Error saving lesson:', err);
+      toast.error(err.response?.data?.error || 'Failed to save lesson');
     } finally {
       setSaving(false);
     }
   };
 
-  // Opens confirm dialog for module deletion
   const handleDeleteModule = (moduleId) => {
     setConfirmDelete({ type: 'module', moduleId });
   };
 
-  // Opens confirm dialog for lesson deletion
   const handleDeleteLesson = (moduleId, lessonId) => {
     setConfirmDelete({ type: 'lesson', moduleId, lessonId });
   };
 
-  // Runs when user confirms in the dialog
   const performDelete = async () => {
     if (!confirmDelete) return;
     const { type, moduleId, lessonId } = confirmDelete;
@@ -306,7 +456,6 @@ function CreateCourse() {
     }
   };
 
-  // ─── NAVIGATION ──────────────────────────────────────────
   const goNext = async () => {
     if (step === 1) { if (await saveBasicInfo()) setStep(2); }
     else if (step === 2) { if (await saveDetails()) setStep(3); }
@@ -335,8 +484,11 @@ function CreateCourse() {
   };
 
   const totalLessons = modules.reduce((sum, m) => sum + (m.lessons?.length || 0), 0);
+  const lessonsWithContent = modules.reduce(
+    (sum, m) => sum + (m.lessons || []).filter((l) => l.content && l.content.trim()).length,
+    0
+  );
 
-  /* ─── shared styles ──────────────────────────────────── */
   const label = {
     display: 'block',
     marginBottom: '0.45rem',
@@ -408,7 +560,6 @@ function CreateCourse() {
             </span>
           </div>
 
-          {/* Stepper */}
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             {STEPS.map((s, i) => {
               const done = s.num < step;
@@ -489,22 +640,19 @@ function CreateCourse() {
               </div>
 
               <div style={fieldset}>
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: '0.45rem',
-                    gap: '0.5rem',
-                    flexWrap: 'wrap',
-                  }}
-                >
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '0.45rem',
+                  gap: '0.5rem',
+                  flexWrap: 'wrap',
+                }}>
                   <label style={{ ...label, marginBottom: 0 }}>Description *</label>
                   <button
                     type="button"
                     onClick={handleGenerateDescription}
                     disabled={generatingDescription || !courseData.title.trim()}
-                    title={!courseData.title.trim() ? 'Type a course title first' : 'Generate a description with AI'}
                     style={{
                       padding: '0.35rem 0.75rem',
                       fontSize: '0.78rem',
@@ -518,7 +666,6 @@ function CreateCourse() {
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: '0.35rem',
-                      transition: 'opacity 0.15s',
                     }}
                   >
                     {generatingDescription ? '✨ Generating…' : '✨ Generate with AI'}
@@ -622,7 +769,6 @@ function CreateCourse() {
                 style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.1fr) minmax(0, 1fr)', gap: '2rem', alignItems: 'start' }}
                 className="thumb-grid"
               >
-                {/* Left: drop zone / preview */}
                 <div>
                   {!courseData.imageUrl ? (
                     <div
@@ -734,7 +880,6 @@ function CreateCourse() {
                   )}
                 </div>
 
-                {/* Right: live preview card */}
                 <div>
                   <div style={{
                     fontSize: '0.72rem',
@@ -811,8 +956,111 @@ function CreateCourse() {
           {/* STEP 4 — CURRICULUM */}
           {step === 4 && (
             <div>
-              <SectionHeading title="Build your curriculum" subtitle="Organize lessons into modules. Students will see this as their course outline." />
+              <SectionHeading title="Build your curriculum" subtitle="Organize lessons into modules. Write real content — students will read it." />
 
+              {/* Quick tools: Import + Quiz */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))',
+                  gap: '0.85rem',
+                  marginBottom: '1.5rem',
+                }}
+              >
+                {/* Import from Text */}
+                <div
+                  style={{
+                    padding: '1rem 1.1rem',
+                    background: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-primary)',
+                    borderRadius: '14px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', minWidth: 0, flex: 1 }}>
+                    <span style={{ fontSize: '1.3rem', flexShrink: 0 }}>📖</span>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        Import from Text
+                      </div>
+                      <div style={{ fontSize: '0.76rem', color: 'var(--text-tertiary)' }}>
+                        AI splits a chapter into modules & lessons
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowOutlineImporter(true)}
+                    disabled={!courseId}
+                    title={!courseId ? 'Save basics first' : 'Import from text'}
+                    style={{
+                      padding: '0.5rem 1rem',
+                      background: '#6c5ce7',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '10px',
+                      cursor: !courseId ? 'not-allowed' : 'pointer',
+                      fontWeight: 700,
+                      fontSize: '0.82rem',
+                      opacity: !courseId ? 0.6 : 1,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    📖 Import
+                  </button>
+                </div>
+
+                {/* Course Quiz */}
+                <div
+                  style={{
+                    padding: '1rem 1.1rem',
+                    background: courseHasQuiz ? 'rgba(52,211,153,0.10)' : 'var(--bg-secondary)',
+                    border: `1px solid ${courseHasQuiz ? 'rgba(52,211,153,0.4)' : 'var(--border-primary)'}`,
+                    borderRadius: '14px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', minWidth: 0, flex: 1 }}>
+                    <span style={{ fontSize: '1.3rem', flexShrink: 0 }}>📝</span>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        Course Quiz
+                      </div>
+                      <div style={{ fontSize: '0.76rem', color: 'var(--text-tertiary)' }}>
+                        {courseHasQuiz ? 'A quiz is saved — rewrite any time' : 'Write your own quiz, or generate per lesson'}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleWriteManualQuiz}
+                    disabled={!courseId}
+                    title={!courseId ? 'Save basics first' : 'Write a quiz from scratch'}
+                    style={{
+                      padding: '0.5rem 1rem',
+                      background: '#6c5ce7',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '10px',
+                      cursor: !courseId ? 'not-allowed' : 'pointer',
+                      fontWeight: 700,
+                      fontSize: '0.82rem',
+                      opacity: !courseId ? 0.6 : 1,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    📝 {courseHasQuiz ? 'Rewrite' : 'Write Quiz'}
+                  </button>
+                </div>
+              </div>
+
+              {/* New module form */}
               <div style={{
                 padding: '1.25rem',
                 background: 'var(--bg-secondary)',
@@ -841,7 +1089,7 @@ function CreateCourse() {
                 <button
                   onClick={handleAddModule}
                   disabled={saving}
-                  style={{ ...btnPrimary, opacity: saving ? 0.7 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}
+                  style={{ ...btnPrimary, opacity: saving ? 0.7 : 1 }}
                 >
                   {saving ? 'Adding…' : '+ Add Module'}
                 </button>
@@ -857,7 +1105,7 @@ function CreateCourse() {
                   color: 'var(--text-tertiary)',
                 }}>
                   <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>📚</div>
-                  <p style={{ margin: 0, fontSize: '0.9rem' }}>No modules yet — add your first one above.</p>
+                  <p style={{ margin: 0, fontSize: '0.9rem' }}>No modules yet — add one above, or import from text.</p>
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
@@ -906,13 +1154,7 @@ function CreateCourse() {
                         </div>
                         <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
                           <span style={chip}>{mod.lessons?.length || 0} lessons</span>
-                          <button
-                            onClick={() => {
-                              setAddingLessonTo(addingLessonTo === mod.id ? null : mod.id);
-                              setNewLessonTitle('');
-                            }}
-                            style={btnPrimarySm}
-                          >
+                          <button onClick={() => openAddLesson(mod.id)} style={btnPrimarySm}>
                             + Lesson
                           </button>
                           <button onClick={() => handleDeleteModule(mod.id)} style={btnDangerSm} title="Delete module">
@@ -928,83 +1170,164 @@ function CreateCourse() {
                           </div>
                         ) : (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                            {mod.lessons.map((lesson, li) => (
-                              <div key={lesson.id} style={{
-                                padding: '0.55rem 0.75rem',
-                                background: 'var(--bg-card)',
-                                borderRadius: '8px',
-                                border: '1px solid var(--border-primary)',
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                gap: '0.75rem',
-                              }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flex: 1, minWidth: 0 }}>
-                                  <span style={{
-                                    width: '22px',
-                                    height: '22px',
-                                    borderRadius: '50%',
-                                    background: 'var(--accent-light)',
-                                    color: '#6c5ce7',
+                            {mod.lessons.map((lesson, li) => {
+                              const hasContent = !!(lesson.content && lesson.content.trim());
+                              const isEditing = lessonForm?.mode === 'edit' && lessonForm?.lessonId === lesson.id;
+                              const isGenerating = generatingQuizFor === lesson.id;
+                              return (
+                                <div key={lesson.id}>
+                                  <div style={{
+                                    padding: '0.55rem 0.75rem',
+                                    background: isEditing ? 'var(--accent-light)' : 'var(--bg-card)',
+                                    borderRadius: '8px',
+                                    border: `1px solid ${isEditing ? '#6c5ce7' : 'var(--border-primary)'}`,
                                     display: 'flex',
+                                    justifyContent: 'space-between',
                                     alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontSize: '0.68rem',
-                                    fontWeight: 700,
-                                    flexShrink: 0,
+                                    gap: '0.75rem',
+                                    flexWrap: 'wrap',
                                   }}>
-                                    {li + 1}
-                                  </span>
-                                  <span style={{ fontSize: '0.88rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {lesson.title}
-                                  </span>
-                                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                                    {lesson.duration}
-                                  </span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flex: 1, minWidth: 0 }}>
+                                      <span style={{
+                                        width: '22px',
+                                        height: '22px',
+                                        borderRadius: '50%',
+                                        background: 'var(--accent-light)',
+                                        color: '#6c5ce7',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontSize: '0.68rem',
+                                        fontWeight: 700,
+                                        flexShrink: 0,
+                                      }}>
+                                        {li + 1}
+                                      </span>
+                                      <span style={{ fontSize: '0.88rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {lesson.title}
+                                      </span>
+                                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                                        {lesson.duration}
+                                      </span>
+                                      {hasContent ? (
+                                        <span
+                                          title="This lesson has content"
+                                          style={{
+                                            fontSize: '0.62rem',
+                                            color: '#34d399',
+                                            background: 'rgba(52,211,153,0.12)',
+                                            padding: '0.1rem 0.5rem',
+                                            borderRadius: '10px',
+                                            fontWeight: 700,
+                                            whiteSpace: 'nowrap',
+                                          }}
+                                        >
+                                          ● Content
+                                        </span>
+                                      ) : (
+                                        <span
+                                          title="No content yet — students will only see the lesson title"
+                                          style={{
+                                            fontSize: '0.62rem',
+                                            color: '#f59e0b',
+                                            background: 'rgba(245,158,11,0.12)',
+                                            padding: '0.1rem 0.5rem',
+                                            borderRadius: '10px',
+                                            fontWeight: 700,
+                                            whiteSpace: 'nowrap',
+                                          }}
+                                        >
+                                          ○ No content
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                      <button
+                                        onClick={() => handleGenerateQuiz(lesson)}
+                                        disabled={!hasContent || isGenerating}
+                                        title={
+                                          !hasContent
+                                            ? 'Add lesson content first'
+                                            : 'Generate a quiz from this lesson with AI'
+                                        }
+                                        style={{
+                                          background: hasContent ? 'var(--accent-light)' : 'transparent',
+                                          color: hasContent ? '#6c5ce7' : 'var(--text-muted)',
+                                          border: '1px solid transparent',
+                                          borderRadius: '6px',
+                                          padding: '0.25rem 0.6rem',
+                                          cursor: hasContent && !isGenerating ? 'pointer' : 'not-allowed',
+                                          fontSize: '0.72rem',
+                                          fontWeight: 700,
+                                          opacity: !hasContent ? 0.5 : 1,
+                                          whiteSpace: 'nowrap',
+                                        }}
+                                      >
+                                        {isGenerating ? '✨ …' : '✨ AI Quiz'}
+                                      </button>
+
+                                      <button
+                                        onClick={() => (isEditing ? closeLessonForm() : openEditLesson(mod.id, lesson))}
+                                        title={isEditing ? 'Cancel editing' : 'Edit lesson'}
+                                        style={{
+                                          background: 'transparent',
+                                          color: isEditing ? '#ef4444' : '#6c5ce7',
+                                          border: '1px solid var(--border-primary)',
+                                          borderRadius: '6px',
+                                          padding: '0.25rem 0.55rem',
+                                          cursor: 'pointer',
+                                          fontSize: '0.72rem',
+                                          fontWeight: 600,
+                                        }}
+                                      >
+                                        {isEditing ? '✕ Close' : '✎ Edit'}
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteLesson(mod.id, lesson.id)}
+                                        style={{
+                                          background: 'transparent',
+                                          color: 'var(--error)',
+                                          border: 'none',
+                                          cursor: 'pointer',
+                                          fontSize: '0.9rem',
+                                          padding: '0.2rem 0.4rem',
+                                        }}
+                                        title="Delete lesson"
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {isEditing && (
+                                    <LessonForm
+                                      mode="edit"
+                                      data={lessonForm.data}
+                                      onChange={handleLessonFormChange}
+                                      onSubmit={submitLessonForm}
+                                      onCancel={closeLessonForm}
+                                      saving={saving}
+                                      inputStyle={input}
+                                      labelStyle={label}
+                                    />
+                                  )}
                                 </div>
-                                <button
-                                  onClick={() => handleDeleteLesson(mod.id, lesson.id)}
-                                  style={{ background: 'transparent', color: 'var(--error)', border: 'none', cursor: 'pointer', fontSize: '0.9rem', flexShrink: 0 }}
-                                  title="Delete lesson"
-                                >
-                                  ✕
-                                </button>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
 
-                        {addingLessonTo === mod.id && (
-                          <div style={{
-                            marginTop: '0.75rem',
-                            padding: '0.75rem',
-                            background: 'var(--bg-card)',
-                            borderRadius: '10px',
-                            border: '1px solid #6c5ce7',
-                          }}>
-                            <input
-                              type="text"
-                              value={newLessonTitle}
-                              onChange={(e) => setNewLessonTitle(e.target.value)}
-                              placeholder="Lesson title"
-                              autoFocus
-                              style={{ ...input, marginBottom: '0.5rem' }}
-                              onKeyDown={(e) => { if (e.key === 'Enter') handleAddLesson(mod.id); }}
-                            />
-                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                              <input
-                                type="text"
-                                value={newLessonDuration}
-                                onChange={(e) => setNewLessonDuration(e.target.value)}
-                                placeholder="10 min"
-                                style={{ ...input, flex: 1, minWidth: '120px' }}
-                              />
-                              <button onClick={() => handleAddLesson(mod.id)} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.7 : 1 }}>
-                                {saving ? '…' : 'Add'}
-                              </button>
-                              <button onClick={() => setAddingLessonTo(null)} style={btnGhost}>Cancel</button>
-                            </div>
-                          </div>
+                        {lessonForm?.mode === 'add' && lessonForm?.moduleId === mod.id && (
+                          <LessonForm
+                            mode="add"
+                            data={lessonForm.data}
+                            onChange={handleLessonFormChange}
+                            onSubmit={submitLessonForm}
+                            onCancel={closeLessonForm}
+                            saving={saving}
+                            inputStyle={input}
+                            labelStyle={label}
+                          />
                         )}
                       </div>
                     </div>
@@ -1027,6 +1350,7 @@ function CreateCourse() {
                 }}>
                   <span>📚 {modules.length} modules</span>
                   <span>🎬 {totalLessons} lessons</span>
+                  <span>📝 {lessonsWithContent} with content</span>
                 </div>
               )}
             </div>
@@ -1083,13 +1407,14 @@ function CreateCourse() {
 
                 <div style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
                   gap: '0.75rem',
                   paddingTop: '1.25rem',
                   borderTop: '1px solid var(--border-primary)',
                 }}>
                   <Stat label="Modules" value={modules.length} />
                   <Stat label="Lessons" value={totalLessons} />
+                  <Stat label="Quiz" value={courseHasQuiz ? '✓' : '—'} />
                 </div>
               </div>
 
@@ -1187,7 +1512,6 @@ function CreateCourse() {
         </div>
       </div>
 
-      {/* Confirm dialog for module/lesson deletion */}
       <ConfirmDialog
         isOpen={!!confirmDelete}
         title={confirmDelete?.type === 'module' ? 'Delete this module?' : 'Delete this lesson?'}
@@ -1202,21 +1526,123 @@ function CreateCourse() {
         onCancel={() => setConfirmDelete(null)}
       />
 
+      <QuizGeneratorModal
+        isOpen={!!quizModal}
+        questions={quizModal?.questions || []}
+        mode={quizModal?.mode || 'ai'}
+        onSave={handleSaveQuiz}
+        onCancel={() => setQuizModal(null)}
+        saving={savingQuiz}
+      />
+
+      <OutlineImporterModal
+        isOpen={showOutlineImporter}
+        courseTitle={courseData.title}
+        courseCategory={courseData.category}
+        onConfirm={handleImportOutline}
+        onCancel={() => setShowOutlineImporter(false)}
+        saving={importingOutline}
+      />
+
       <style>{`
         @media (max-width: 720px) {
-          .thumb-grid {
-            grid-template-columns: 1fr !important;
-          }
-          .stepper-label {
-            display: none;
-          }
+          .thumb-grid { grid-template-columns: 1fr !important; }
+          .stepper-label { display: none; }
         }
       `}</style>
     </div>
   );
 }
 
-/* ─── helper components ─────────────────────────────── */
+/* ─── sub-components ──────────────────────────────── */
+
+function LessonForm({ mode, data, onChange, onSubmit, onCancel, saving, inputStyle, labelStyle }) {
+  return (
+    <div
+      style={{
+        marginTop: '0.75rem',
+        padding: '1rem',
+        background: 'var(--bg-card)',
+        borderRadius: '10px',
+        border: '1px solid #6c5ce7',
+      }}
+    >
+      <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#6c5ce7', marginBottom: '0.75rem' }}>
+        {mode === 'add' ? '➕ New Lesson' : '✎ Editing Lesson'}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 140px)', gap: '0.6rem', marginBottom: '0.6rem' }}>
+        <div>
+          <label style={{ ...labelStyle, fontSize: '0.78rem' }}>Title *</label>
+          <input
+            type="text"
+            value={data.title}
+            onChange={(e) => onChange('title', e.target.value)}
+            placeholder="Lesson title"
+            autoFocus={mode === 'add'}
+            style={{ ...inputStyle, fontSize: '0.9rem' }}
+          />
+        </div>
+        <div>
+          <label style={{ ...labelStyle, fontSize: '0.78rem' }}>Duration</label>
+          <input
+            type="text"
+            value={data.duration}
+            onChange={(e) => onChange('duration', e.target.value)}
+            placeholder="10 min"
+            style={{ ...inputStyle, fontSize: '0.9rem' }}
+          />
+        </div>
+      </div>
+
+      <div style={{ marginBottom: '0.75rem' }}>
+        <label style={{ ...labelStyle, fontSize: '0.78rem' }}>
+          Lesson Content <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(markdown-lite: # headings, **bold**, - lists, \`code\`)</span>
+        </label>
+        <textarea
+          value={data.content}
+          onChange={(e) => onChange('content', e.target.value)}
+          rows={10}
+          placeholder={`Write the lesson content here. Example:
+
+# Introduction
+
+Welcome! In this lesson we'll cover **closures** in JavaScript.
+
+## What is a closure?
+
+A closure is a function that remembers variables from the scope it was created in.
+
+- It has access to its own scope
+- It has access to the outer function's scope
+- It has access to the global scope`}
+          style={{
+            ...inputStyle,
+            fontFamily: 'var(--mono)',
+            fontSize: '0.85rem',
+            lineHeight: 1.6,
+            resize: 'vertical',
+            minHeight: '200px',
+          }}
+        />
+        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.35rem', textAlign: 'right' }}>
+          {data.content.length} chars
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <button
+          onClick={onSubmit}
+          disabled={saving}
+          style={{ ...btnPrimary, opacity: saving ? 0.7 : 1 }}
+        >
+          {saving ? 'Saving…' : mode === 'add' ? '+ Add Lesson' : 'Save Changes'}
+        </button>
+        <button onClick={onCancel} style={btnGhost}>Cancel</button>
+      </div>
+    </div>
+  );
+}
 
 function SectionHeading({ title, subtitle }) {
   return (
@@ -1265,8 +1691,6 @@ function Check({ ok, label }) {
     </div>
   );
 }
-
-/* ─── style helpers ─────────────────────────────────── */
 
 const chip = {
   padding: '0.2rem 0.6rem',

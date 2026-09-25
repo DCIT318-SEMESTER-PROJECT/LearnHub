@@ -8,10 +8,13 @@ import {
   deleteStudyGroup,
   getGroupMessages,
   sendGroupMessage,
+  getMemberPreviews,
 } from '../api/studyGroupsAPI';
 import { getCourses } from '../api/coursesAPI';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import ConfirmDialog from '../components/common/ConfirmDialog';
+import MemberProfileModal from '../components/common/MemberProfileModal';
 
 const isImageUrl = (v) =>
   typeof v === 'string' &&
@@ -20,18 +23,25 @@ const isImageUrl = (v) =>
 const initials = (first = '', last = '') =>
   `${first[0] || ''}${last[0] || ''}`.toUpperCase() || '?';
 
+const formatBytes = (bytes = 0) => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
 function StudyGroups() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const toast = useToast();
 
   const [groups, setGroups] = useState([]);
+  const [memberPreviews, setMemberPreviews] = useState({});
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
 
-  const [filter, setFilter] = useState('all'); // all | mine | created
+  const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
 
   const [selectedGroup, setSelectedGroup] = useState(null);
@@ -39,6 +49,14 @@ function StudyGroups() {
   const [chatMessage, setChatMessage] = useState('');
   const [loadingMessages, setLoadingMessages] = useState(false);
   const messagesEndRef = useRef(null);
+
+  // ✅ File sharing state
+  const [pendingAttachment, setPendingAttachment] = useState(null);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const attachInputRef = useRef(null);
+
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [profileUserId, setProfileUserId] = useState(null);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -65,8 +83,19 @@ function StudyGroups() {
         getStudyGroups(),
         getCourses(),
       ]);
-      setGroups(groupsRes.data || []);
+      const fetchedGroups = groupsRes.data || [];
+      setGroups(fetchedGroups);
       setCourses(coursesRes.data || []);
+
+      if (fetchedGroups.length > 0) {
+        try {
+          const ids = fetchedGroups.map((g) => g.id);
+          const previewRes = await getMemberPreviews(ids);
+          setMemberPreviews(previewRes.data || {});
+        } catch (err) {
+          console.warn('Member previews unavailable:', err.message);
+        }
+      }
     } catch (err) {
       console.error('Error fetching data:', err);
       toast.error('Failed to load study groups');
@@ -85,6 +114,9 @@ function StudyGroups() {
         user: `${m.firstName || 'User'} ${m.lastName || ''}`.trim(),
         avatarUrl: m.avatarUrl,
         message: m.message,
+        attachmentData: m.attachmentData,
+        attachmentType: m.attachmentType,
+        attachmentName: m.attachmentName,
         time: new Date(m.sentAt).toLocaleTimeString([], {
           hour: '2-digit',
           minute: '2-digit',
@@ -124,6 +156,7 @@ function StudyGroups() {
       setFormData({ name: '', description: '', courseId: '', maxMembers: 20, meetingSchedule: '' });
       setShowCreate(false);
       toast.success('Study group created! 🎉');
+      fetchData();
     } catch (err) {
       console.error(err);
       toast.error(err.response?.data?.error || 'Failed to create group');
@@ -132,8 +165,9 @@ function StudyGroups() {
     }
   };
 
-  const handleDelete = async (groupId) => {
-    if (!window.confirm('Delete this study group? This cannot be undone.')) return;
+  const performDelete = async () => {
+    const groupId = confirmDeleteId;
+    setConfirmDeleteId(null);
     try {
       await deleteStudyGroup(groupId);
       setGroups((g) => g.filter((x) => x.id !== groupId));
@@ -159,6 +193,7 @@ function StudyGroups() {
         )
       );
       toast.success('Joined group');
+      fetchData();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to join group');
     }
@@ -175,6 +210,7 @@ function StudyGroups() {
         )
       );
       toast.info('Left group');
+      fetchData();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to leave group');
     }
@@ -183,6 +219,7 @@ function StudyGroups() {
   const openChat = async (group) => {
     setSelectedGroup(group);
     setChatMessages([]);
+    setPendingAttachment(null);
     await fetchMessages(group.id);
   };
 
@@ -190,38 +227,86 @@ function StudyGroups() {
     setSelectedGroup(null);
     setChatMessages([]);
     setChatMessage('');
+    setPendingAttachment(null);
+  };
+
+  // ✅ Pick a file (images / PDFs / text), read as base64
+  const handleAttachmentPick = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('File must be less than 2MB');
+      e.target.value = '';
+      return;
+    }
+
+    const allowedTypes = ['image/', 'application/pdf', 'text/plain', 'text/markdown'];
+    const isAllowed = allowedTypes.some((prefix) =>
+      prefix.endsWith('/') ? file.type.startsWith(prefix) : file.type === prefix
+    );
+
+    if (!isAllowed) {
+      toast.error('Only images, PDFs, and text files are supported');
+      e.target.value = '';
+      return;
+    }
+
+    setUploadingAttachment(true);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setPendingAttachment({
+        data: reader.result,
+        type: file.type,
+        name: file.name,
+        size: file.size,
+      });
+      setUploadingAttachment(false);
+    };
+    reader.onerror = () => {
+      toast.error('Failed to read file');
+      setUploadingAttachment(false);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   const handleSend = async (e) => {
     e.preventDefault();
-    if (!chatMessage.trim() || !selectedGroup) return;
+    if ((!chatMessage.trim() && !pendingAttachment) || !selectedGroup) return;
+
     const text = chatMessage.trim();
+    const attachment = pendingAttachment;
 
     const temp = {
       id: `temp-${Date.now()}`,
       userId: user.id,
       user: `${user.firstName || 'You'} ${user.lastName || ''}`.trim(),
       message: text,
+      attachmentData: attachment?.data,
+      attachmentType: attachment?.type,
+      attachmentName: attachment?.name,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       isOwn: true,
       isTemp: true,
     };
     setChatMessages((prev) => [...prev, temp]);
     setChatMessage('');
+    setPendingAttachment(null);
 
     try {
-      await sendGroupMessage(selectedGroup.id, text);
+      await sendGroupMessage(selectedGroup.id, text, attachment);
       await fetchMessages(selectedGroup.id);
     } catch (err) {
       setChatMessages((prev) => prev.filter((m) => m.id !== temp.id));
-      toast.error('Failed to send message');
+      setChatMessage(text);
+      setPendingAttachment(attachment);
+      toast.error(err.response?.data?.error || 'Failed to send message');
     }
   };
 
-  // ─── filtering ─────────────────────────────────────────────
   const filteredGroups = useMemo(() => {
     let list = [...groups];
-
     if (filter === 'mine') list = list.filter((g) => g.isJoined);
     if (filter === 'created') list = list.filter((g) => g.isAdmin);
 
@@ -234,7 +319,6 @@ function StudyGroups() {
           g.courseTitle?.toLowerCase().includes(q)
       );
     }
-
     return list;
   }, [groups, filter, search]);
 
@@ -488,10 +572,12 @@ function StudyGroups() {
             <GroupCard
               key={group.id}
               group={group}
+              members={memberPreviews[group.id] || []}
               onJoin={() => handleJoin(group.id)}
               onLeave={() => handleLeave(group.id)}
               onOpen={() => openChat(group)}
-              onDelete={() => handleDelete(group.id)}
+              onDelete={() => setConfirmDeleteId(group.id)}
+              onViewProfile={(uid) => setProfileUserId(uid)}
             />
           ))}
         </div>
@@ -505,7 +591,7 @@ function StudyGroups() {
             bottom: '20px',
             right: '20px',
             width: 'min(420px, calc(100vw - 40px))',
-            maxHeight: 'min(560px, calc(100vh - 40px))',
+            maxHeight: 'min(600px, calc(100vh - 40px))',
             background: 'var(--bg-card)',
             borderRadius: '16px',
             boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
@@ -551,7 +637,7 @@ function StudyGroups() {
               padding: '1rem',
               background: 'var(--bg-secondary)',
               minHeight: '200px',
-              maxHeight: '340px',
+              maxHeight: '380px',
             }}
           >
             {loadingMessages ? (
@@ -575,24 +661,96 @@ function StudyGroups() {
                   }}
                 >
                   <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginBottom: '0.2rem' }}>
-                    <span style={{ fontSize: '0.72rem', fontWeight: 600, color: m.isOwn ? '#6c5ce7' : 'var(--text-primary)' }}>
+                    <button
+                      onClick={() => !m.isOwn && setProfileUserId(m.userId)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        padding: 0,
+                        cursor: m.isOwn ? 'default' : 'pointer',
+                        fontSize: '0.72rem',
+                        fontWeight: 600,
+                        color: m.isOwn ? '#6c5ce7' : 'var(--text-primary)',
+                        fontFamily: 'inherit',
+                      }}
+                    >
                       {m.isOwn ? 'You' : m.user}
-                    </span>
+                    </button>
                     <span style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)' }}>{m.time}</span>
                   </div>
+
                   <div
                     style={{
-                      padding: '0.5rem 0.8rem',
+                      padding: m.attachmentData ? '0.45rem' : '0.5rem 0.8rem',
                       background: m.isOwn ? '#6c5ce7' : 'var(--bg-card)',
                       color: m.isOwn ? 'white' : 'var(--text-primary)',
                       borderRadius: '12px',
-                      maxWidth: '80%',
+                      maxWidth: '82%',
                       wordBreak: 'break-word',
                       fontSize: '0.9rem',
                       border: m.isOwn ? 'none' : '1px solid var(--border-primary)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.4rem',
                     }}
                   >
-                    {m.message}
+                    {/* Image attachment */}
+                    {m.attachmentData && m.attachmentType?.startsWith('image/') && (
+                      <img
+                        src={m.attachmentData}
+                        alt={m.attachmentName || 'image'}
+                        style={{
+                          maxWidth: '100%',
+                          maxHeight: '220px',
+                          borderRadius: '8px',
+                          objectFit: 'cover',
+                          display: 'block',
+                        }}
+                      />
+                    )}
+
+                    {/* File attachment (non-image) */}
+                    {m.attachmentData && !m.attachmentType?.startsWith('image/') && (
+                      <a
+                        href={m.attachmentData}
+                        download={m.attachmentName}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          padding: '0.5rem 0.7rem',
+                          background: m.isOwn ? 'rgba(255,255,255,0.18)' : 'var(--bg-secondary)',
+                          border: m.isOwn ? '1px solid rgba(255,255,255,0.28)' : '1px solid var(--border-primary)',
+                          borderRadius: '8px',
+                          textDecoration: 'none',
+                          color: 'inherit',
+                        }}
+                      >
+                        <span style={{ fontSize: '1.2rem' }}>
+                          {m.attachmentType === 'application/pdf' ? '📄' : '📝'}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: '0.82rem',
+                            fontWeight: 600,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            maxWidth: '180px',
+                          }}
+                        >
+                          {m.attachmentName || 'Download'}
+                        </span>
+                        <span style={{ fontSize: '0.7rem', opacity: 0.75, marginLeft: 'auto' }}>↓</span>
+                      </a>
+                    )}
+
+                    {/* Text content */}
+                    {m.message && (
+                      <div style={{ padding: m.attachmentData ? '0 0.35rem 0.1rem' : 0 }}>
+                        {m.message}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))
@@ -600,57 +758,178 @@ function StudyGroups() {
             <div ref={messagesEndRef} />
           </div>
 
+          {/* Composer */}
           <form
             onSubmit={handleSend}
             style={{
-              display: 'flex',
-              gap: '0.5rem',
               padding: '0.75rem',
               borderTop: '1px solid var(--border-primary)',
               background: 'var(--bg-card)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.5rem',
             }}
           >
-            <input
-              type="text"
-              value={chatMessage}
-              onChange={(e) => setChatMessage(e.target.value)}
-              placeholder="Type a message…"
-              style={{
-                flex: 1,
-                padding: '0.55rem 0.75rem',
-                border: '1px solid var(--border-input, var(--border-primary))',
-                borderRadius: '10px',
-                fontSize: '0.9rem',
-                color: 'var(--text-primary)',
-                background: 'var(--bg-input, var(--bg-secondary))',
-                outline: 'none',
-              }}
-            />
-            <button
-              type="submit"
-              style={{
-                padding: '0.55rem 1rem',
-                background: '#6c5ce7',
-                color: 'white',
-                border: 'none',
-                borderRadius: '10px',
-                cursor: 'pointer',
-                fontWeight: 600,
-                fontSize: '0.85rem',
-              }}
-            >
-              Send
-            </button>
+            {/* Attachment preview */}
+            {pendingAttachment && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.6rem',
+                  padding: '0.5rem 0.7rem',
+                  background: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-primary)',
+                  borderRadius: '10px',
+                }}
+              >
+                {pendingAttachment.type.startsWith('image/') ? (
+                  <img
+                    src={pendingAttachment.data}
+                    alt=""
+                    style={{ width: '36px', height: '36px', borderRadius: '6px', objectFit: 'cover' }}
+                  />
+                ) : (
+                  <span style={{ fontSize: '1.3rem' }}>
+                    {pendingAttachment.type === 'application/pdf' ? '📄' : '📝'}
+                  </span>
+                )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                      color: 'var(--text-primary)',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {pendingAttachment.name}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>
+                    {formatBytes(pendingAttachment.size)}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPendingAttachment(null)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--error)',
+                    fontSize: '1rem',
+                    cursor: 'pointer',
+                    padding: '0.2rem 0.4rem',
+                  }}
+                  title="Remove attachment"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {/* Input row */}
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={() => attachInputRef.current?.click()}
+                disabled={uploadingAttachment}
+                title="Attach file"
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '10px',
+                  background: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-input, var(--border-primary))',
+                  cursor: uploadingAttachment ? 'wait' : 'pointer',
+                  fontSize: '1rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  color: 'var(--text-secondary)',
+                }}
+              >
+                {uploadingAttachment ? '⏳' : '📎'}
+              </button>
+              <input
+                ref={attachInputRef}
+                type="file"
+                accept="image/*,application/pdf,text/plain,text/markdown"
+                onChange={handleAttachmentPick}
+                style={{ display: 'none' }}
+              />
+
+              <input
+                type="text"
+                value={chatMessage}
+                onChange={(e) => setChatMessage(e.target.value)}
+                placeholder={pendingAttachment ? 'Add a caption…' : 'Type a message…'}
+                style={{
+                  flex: 1,
+                  padding: '0.55rem 0.75rem',
+                  border: '1px solid var(--border-input, var(--border-primary))',
+                  borderRadius: '10px',
+                  fontSize: '0.9rem',
+                  color: 'var(--text-primary)',
+                  background: 'var(--bg-input, var(--bg-secondary))',
+                  outline: 'none',
+                }}
+              />
+              <button
+                type="submit"
+                disabled={(!chatMessage.trim() && !pendingAttachment) || uploadingAttachment}
+                style={{
+                  padding: '0.55rem 1rem',
+                  background:
+                    (!chatMessage.trim() && !pendingAttachment) || uploadingAttachment
+                      ? '#a29bfe'
+                      : '#6c5ce7',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '10px',
+                  cursor:
+                    (!chatMessage.trim() && !pendingAttachment) || uploadingAttachment
+                      ? 'not-allowed'
+                      : 'pointer',
+                  fontWeight: 600,
+                  fontSize: '0.85rem',
+                  opacity:
+                    (!chatMessage.trim() && !pendingAttachment) || uploadingAttachment ? 0.7 : 1,
+                }}
+              >
+                Send
+              </button>
+            </div>
           </form>
         </div>
+      )}
+
+      {/* Confirm delete */}
+      <ConfirmDialog
+        isOpen={!!confirmDeleteId}
+        title="Delete this study group?"
+        message="All messages and memberships will be removed. This cannot be undone."
+        confirmLabel="Delete"
+        danger
+        onConfirm={performDelete}
+        onCancel={() => setConfirmDeleteId(null)}
+      />
+
+      {/* Member profile modal */}
+      {profileUserId && (
+        <MemberProfileModal
+          userId={profileUserId}
+          onClose={() => setProfileUserId(null)}
+        />
       )}
     </div>
   );
 }
 
-/* ─── subcomponents ─────────────────────────────── */
-
-function GroupCard({ group, onJoin, onLeave, onOpen, onDelete }) {
+/* ─── GroupCard ──────────────────────────────────────── */
+function GroupCard({ group, members = [], onJoin, onLeave, onOpen, onDelete, onViewProfile }) {
   const [hover, setHover] = useState(false);
 
   return (
@@ -670,7 +949,6 @@ function GroupCard({ group, onJoin, onLeave, onOpen, onDelete }) {
         height: '100%',
       }}
     >
-      {/* Course chip */}
       {group.courseId && (
         <Link
           to={`/courses/${group.courseId}`}
@@ -725,6 +1003,67 @@ function GroupCard({ group, onJoin, onLeave, onOpen, onDelete }) {
         {group.description}
       </p>
 
+      {members.length > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.6rem',
+            padding: '0.65rem 0.75rem',
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border-primary)',
+            borderRadius: '12px',
+            marginBottom: '0.75rem',
+          }}
+        >
+          <div style={{ display: 'flex' }}>
+            {members.slice(0, 4).map((m, i) => (
+              <button
+                key={m.id}
+                onClick={(e) => { e.stopPropagation(); onViewProfile(m.id); }}
+                title={`${m.firstName} ${m.lastName}${m.isAdmin ? ' · Admin' : ''}`}
+                style={{
+                  width: '30px',
+                  height: '30px',
+                  borderRadius: '50%',
+                  background: 'linear-gradient(135deg, #6c5ce7, #a29bfe)',
+                  border: '2px solid var(--bg-secondary)',
+                  marginLeft: i === 0 ? 0 : '-10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'white',
+                  fontSize: '0.68rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  overflow: 'hidden',
+                  padding: 0,
+                  flexShrink: 0,
+                  transition: 'transform 0.15s',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.12) translateY(-2px)')}
+                onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+              >
+                {isImageUrl(m.avatarUrl) ? (
+                  <img src={m.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  initials(m.firstName, m.lastName)
+                )}
+              </button>
+            ))}
+          </div>
+          <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)', fontWeight: 500 }}>
+            {group.members || members.length}
+            {group.members > members.length && ` · +${group.members - members.length} more`}
+          </span>
+          {group.isAdmin && (
+            <span style={{ fontSize: '0.62rem', color: '#6c5ce7', background: '#f0eeff', padding: '0.15rem 0.5rem', borderRadius: '10px', fontWeight: 700, marginLeft: 'auto' }}>
+              ADMIN
+            </span>
+          )}
+        </div>
+      )}
+
       {group.meetingSchedule && (
         <div
           style={{
@@ -745,7 +1084,6 @@ function GroupCard({ group, onJoin, onLeave, onOpen, onDelete }) {
         </div>
       )}
 
-      {/* footer */}
       <div
         style={{
           display: 'flex',
@@ -757,42 +1095,9 @@ function GroupCard({ group, onJoin, onLeave, onOpen, onDelete }) {
           flexWrap: 'wrap',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
-          {/* avatar stack */}
-          <div style={{ display: 'flex' }}>
-            {Array.from({ length: Math.min(group.members || 0, 3) }).map((_, i) => (
-              <div
-                key={i}
-                style={{
-                  width: '24px',
-                  height: '24px',
-                  borderRadius: '50%',
-                  background: 'linear-gradient(135deg, #6c5ce7, #a29bfe)',
-                  border: '2px solid var(--bg-card)',
-                  marginLeft: i === 0 ? 0 : '-8px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: 'white',
-                  fontSize: '0.65rem',
-                  fontWeight: 700,
-                  flexShrink: 0,
-                }}
-              >
-                {initials('U', String(i + 1))}
-              </div>
-            ))}
-          </div>
-          <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
-            {group.members || 0}/{group.maxMembers || 20}
-          </span>
-          {group.isAdmin && (
-            <span style={{ fontSize: '0.65rem', color: '#6c5ce7', background: '#f0eeff', padding: '0.15rem 0.5rem', borderRadius: '10px', fontWeight: 700 }}>
-              ADMIN
-            </span>
-          )}
-        </div>
-
+        <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>
+          {group.members || 0}/{group.maxMembers || 20} spots
+        </span>
         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
           {group.isJoined ? (
             <>
@@ -811,6 +1116,7 @@ function GroupCard({ group, onJoin, onLeave, onOpen, onDelete }) {
   );
 }
 
+/* ─── Empty state ────────────────────────────────────── */
 function EmptyState({ filter, hasGroups, onCreate }) {
   const message =
     !hasGroups
@@ -855,8 +1161,7 @@ function EmptyState({ filter, hasGroups, onCreate }) {
   );
 }
 
-/* ─── tiny style helpers ────────────────────────── */
-
+/* ─── style helpers ─────────────────────────────────── */
 const inputStyle = {
   width: '100%',
   padding: '0.7rem 0.85rem',

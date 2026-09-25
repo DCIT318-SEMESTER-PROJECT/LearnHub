@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getDashboardSummary } from '../api/authAPI';
+import LiveActivityTicker from '../components/common/LiveActivityTicker';
 import asianImage from '../assets/asian.avif';
 
 const stats = [
@@ -12,23 +13,23 @@ const stats = [
 ];
 
 const features = [
-  { 
-    icon: '📚', 
-    title: 'Curated Courses',   
+  {
+    icon: '📚',
+    title: 'Curated Courses',
     desc: 'Browse thousands of courses structured and peer-reviewed across every discipline.',
-    link: '/courses'
+    link: '/courses',
   },
-  { 
-    icon: '👥', 
-    title: 'Study Groups',      
+  {
+    icon: '👥',
+    title: 'Study Groups',
     desc: 'Create or join groups with real-time chat and virtual study session scheduling.',
-    link: '/study-groups'
+    link: '/study-groups',
   },
-  { 
-    icon: '📈', 
-    title: 'Progress Tracking', 
+  {
+    icon: '📈',
+    title: 'Progress Tracking',
     desc: 'Track completion, quiz scores, and earn achievement badges as you hit milestones.',
-    link: '/dashboard'
+    link: '/dashboard',
   },
 ];
 
@@ -50,29 +51,17 @@ export default function Home() {
   const fetchSummary = async () => {
     try {
       setLoadingSummary(true);
-      console.log('📊 Fetching summary for user:', user?.id);
       const response = await getDashboardSummary();
-      console.log('📊 Summary received:', response.data);
       setSummary(response.data);
     } catch (err) {
-      console.error('❌ Failed to fetch dashboard summary:', err);
-      console.error('Error response:', err.response?.data);
+      console.error('Failed to fetch dashboard summary:', err);
     } finally {
       setLoadingSummary(false);
     }
   };
 
-  // Debug: Log what's happening
-  console.log('🎨 Render state:', {
-    hasUser: !!user,
-    hasSummary: !!summary,
-    summaryData: summary,
-    loading: loadingSummary
-  });
-
   return (
     <div className="home">
-
       {/* ── Hero Section ── */}
       <section className="hero">
         <div className="hero-content">
@@ -86,7 +75,7 @@ export default function Home() {
           </h1>
 
           <p className="hero-sub">
-            {user 
+            {user
               ? 'Pick up where you left off, explore new courses, and keep building your skills.'
               : 'Access world-class courses, connect with study groups, and track your progress — all in one beautiful, distraction-free platform.'}
           </p>
@@ -115,24 +104,17 @@ export default function Home() {
           </div>
         </div>
 
-        {/* ── Hero Card - Different for logged in/out ── */}
+        {/* ── Hero Card ── */}
         <div className="hero-card-wrap">
           {user ? (
-            // ── LOGGED IN: Personalized Snapshot Card ──
             <div className="user-snapshot-card">
-              {/* Header */}
               <div className="snapshot-header">
                 <div className="snapshot-avatar">
                   {user.avatarUrl ? (
-                    <img 
-                      src={user.avatarUrl} 
+                    <img
+                      src={user.avatarUrl}
                       alt={user.firstName}
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                        borderRadius: '50%'
-                      }}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }}
                     />
                   ) : (
                     <span>{user.firstName?.[0]}{user.lastName?.[0]}</span>
@@ -144,12 +126,9 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Stats Grid */}
               <div className="snapshot-stats">
                 <div className="snapshot-stat">
-                  <div className="snapshot-stat-icon" style={{ background: '#fee2e2' }}>
-                    🔥
-                  </div>
+                  <div className="snapshot-stat-icon" style={{ background: '#fee2e2' }}>🔥</div>
                   <div>
                     <div className="snapshot-stat-value">
                       {loadingSummary ? '...' : (summary?.streakDays ?? 0)}
@@ -157,11 +136,8 @@ export default function Home() {
                     <div className="snapshot-stat-label">Day Streak</div>
                   </div>
                 </div>
-
                 <div className="snapshot-stat">
-                  <div className="snapshot-stat-icon" style={{ background: '#dbeafe' }}>
-                    📚
-                  </div>
+                  <div className="snapshot-stat-icon" style={{ background: '#dbeafe' }}>📚</div>
                   <div>
                     <div className="snapshot-stat-value">
                       {loadingSummary ? '...' : (summary?.activeCourses ?? 0)}
@@ -169,11 +145,8 @@ export default function Home() {
                     <div className="snapshot-stat-label">Active Courses</div>
                   </div>
                 </div>
-
                 <div className="snapshot-stat">
-                  <div className="snapshot-stat-icon" style={{ background: '#dcfce7' }}>
-                    🏆
-                  </div>
+                  <div className="snapshot-stat-icon" style={{ background: '#dcfce7' }}>🏆</div>
                   <div>
                     <div className="snapshot-stat-value">
                       {loadingSummary ? '...' : (summary?.badgesCount ?? 0)}
@@ -181,11 +154,8 @@ export default function Home() {
                     <div className="snapshot-stat-label">Badges</div>
                   </div>
                 </div>
-
                 <div className="snapshot-stat">
-                  <div className="snapshot-stat-icon" style={{ background: '#fef3c7' }}>
-                    ⏱️
-                  </div>
+                  <div className="snapshot-stat-icon" style={{ background: '#fef3c7' }}>⏱️</div>
                   <div>
                     <div className="snapshot-stat-value">
                       {loadingSummary ? '...' : `${summary?.totalLearningHours ?? 0}h`}
@@ -195,24 +165,16 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Current Course Preview */}
               {summary?.currentCourse ? (
-                <Link 
-                  to={`/courses/${summary.currentCourse.id}`}
-                  style={{ textDecoration: 'none' }}
-                >
+                <Link to={`/courses/${summary.currentCourse.id}`} style={{ textDecoration: 'none' }}>
                   <div className="snapshot-course">
                     <div className="snapshot-course-icon">
-                      {summary.currentCourse.imageUrl?.startsWith('data:image') || summary.currentCourse.imageUrl?.startsWith('http') ? (
-                        <img 
-                          src={summary.currentCourse.imageUrl} 
+                      {summary.currentCourse.imageUrl?.startsWith('data:image') ||
+                      summary.currentCourse.imageUrl?.startsWith('http') ? (
+                        <img
+                          src={summary.currentCourse.imageUrl}
                           alt={summary.currentCourse.title}
-                          style={{
-                            width: '100%',
-                            height: '100%',
-                            objectFit: 'cover',
-                            borderRadius: '12px'
-                          }}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '12px' }}
                         />
                       ) : (
                         summary.currentCourse.imageUrl || '📚'
@@ -222,8 +184,8 @@ export default function Home() {
                       <p className="snapshot-course-label">Continue learning</p>
                       <p className="snapshot-course-title">{summary.currentCourse.title}</p>
                       <div className="snapshot-progress-track">
-                        <div 
-                          className="snapshot-progress-fill" 
+                        <div
+                          className="snapshot-progress-fill"
                           style={{ width: `${summary.currentCourse.progress}%` }}
                         />
                       </div>
@@ -246,39 +208,28 @@ export default function Home() {
                 </Link>
               )}
 
-              {/* Recent Achievement */}
               {summary?.recentAchievement && (
                 <div className="snapshot-achievement">
                   <div className="snapshot-achievement-icon">
                     {summary.recentAchievement.icon || '🏅'}
                   </div>
                   <div>
-                    <p className="snapshot-achievement-title">
-                      {summary.recentAchievement.name}
-                    </p>
-                    <p className="snapshot-achievement-desc">
-                      {summary.recentAchievement.description}
-                    </p>
+                    <p className="snapshot-achievement-title">{summary.recentAchievement.name}</p>
+                    <p className="snapshot-achievement-desc">{summary.recentAchievement.description}</p>
                   </div>
                 </div>
               )}
             </div>
           ) : (
-            // ── LOGGED OUT: Marketing Preview Card ──
             <>
               <div className="streak-chip">🔥 12-day streak! Keep it up</div>
 
               <div className="course-card">
                 <div className="course-card-hero-img">
-                  <img 
-                    src={asianImage} 
+                  <img
+                    src={asianImage}
                     alt="Learning illustration"
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      objectFit: 'cover',
-                      borderRadius: '16px 16px 0 0'
-                    }}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '16px 16px 0 0' }}
                   />
                 </div>
                 <button className="play-btn" aria-label="Play lesson">▶</button>
@@ -304,9 +255,12 @@ export default function Home() {
         </div>
       </section>
 
+      {/* ── Live Activity Pop Card (logged out only) ── */}
+      {!user && <LiveActivityTicker />}
+
       {/* ── Stats Bar ── */}
       <section className="stats-bar">
-        {stats.map(s => (
+        {stats.map((s) => (
           <div key={s.label} className="stat-item">
             <span className="stat-value">{s.value}</span>
             <span className="stat-label">{s.label}</span>
@@ -318,7 +272,7 @@ export default function Home() {
       <section className="features">
         <h2 className="features-heading">Everything you need to learn better</h2>
         <div className="features-grid">
-          {features.map(f => (
+          {features.map((f) => (
             <Link key={f.title} to={f.link} style={{ textDecoration: 'none' }}>
               <div className="feature-card">
                 <div className="feature-icon">{f.icon}</div>
@@ -337,7 +291,7 @@ export default function Home() {
         <div className="bubble bubble-2"></div>
         <div className="bubble bubble-3"></div>
         <div className="bubble bubble-4"></div>
-        
+
         {user ? (
           <>
             <h2>Ready to continue learning?</h2>
