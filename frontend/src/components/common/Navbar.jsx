@@ -49,7 +49,7 @@ function Navbar() {
           )}
         </div>
 
-        {/* Actions — hidden on mobile */}
+        {/* Desktop actions — hidden on mobile */}
         <div className="navbar-actions">
           {/* Theme toggle */}
           <button
@@ -68,7 +68,7 @@ function Navbar() {
             {isDark ? '☀️' : '🌙'}
           </button>
 
-          {/* Bell */}
+          {/* ✅ Bell — messages inbox */}
           {user && (
             <div style={{ position: 'relative' }}>
               <button
@@ -152,7 +152,7 @@ function Navbar() {
           )}
         </div>
 
-        {/* ✅ Hamburger — OUTSIDE navbar-actions so it isn't hidden */}
+        {/* ✅ Hamburger — OUTSIDE navbar-actions so it isn't hidden on mobile */}
         <button
           className="hamburger"
           onClick={() => setMenuOpen((v) => !v)}
@@ -174,6 +174,45 @@ function Navbar() {
             <>
               <Link to="/dashboard" className="mobile-nav-link">📊 Dashboard</Link>
               <Link to="/profile" className="mobile-nav-link">👤 Profile</Link>
+
+              {/* ✅ Messages button — visible in mobile menu with badge */}
+              <button
+                onClick={() => {
+                  setMenuOpen(false);
+                  setInboxOpen(true);
+                }}
+                className="mobile-nav-link"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  color: 'inherit',
+                  fontFamily: 'inherit',
+                  fontSize: 'inherit',
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <span>🔔 Messages</span>
+                {unreadCount > 0 && (
+                  <span
+                    style={{
+                      background: '#ef4444',
+                      color: 'white',
+                      fontSize: '0.7rem',
+                      fontWeight: 700,
+                      borderRadius: '10px',
+                      padding: '0.1rem 0.5rem',
+                    }}
+                  >
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
               <button
                 onClick={handleLogout}
                 className="mobile-nav-link"
@@ -192,6 +231,7 @@ function Navbar() {
               </button>
             </>
           )}
+
           {!user && (
             <>
               <Link to="/login" className="mobile-nav-link">Sign In</Link>
@@ -199,7 +239,7 @@ function Navbar() {
             </>
           )}
 
-          {/* Mobile-only extras — theme toggle + messages link */}
+          {/* Theme toggle inside mobile menu */}
           <div
             style={{
               display: 'flex',
@@ -212,12 +252,23 @@ function Navbar() {
             <button
               onClick={toggleTheme}
               className="nav-btn-ghost"
-              style={{ flex: 1, height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              style={{
+                flex: 1,
+                height: '40px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
             >
               {isDark ? '☀️ Light mode' : '🌙 Dark mode'}
             </button>
           </div>
         </div>
+      )}
+
+      {/* ✅ Inbox drawer — rendered OUTSIDE navbar-actions so it works on mobile too */}
+      {inboxOpen && user && (
+        <InboxDrawer onClose={() => setInboxOpen(false)} />
       )}
     </nav>
   );
