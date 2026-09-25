@@ -1,11 +1,11 @@
 import axios from 'axios';
 
 // ─── Base URL ──────────────────────────────────
-// In local dev: hits your local backend
-// In production (Netlify build): uses VITE_API_URL from Netlify env vars
-const API_URL = import.meta.env.DEV
-  ? 'http://localhost:5000/api'
-  : (import.meta.env.VITE_API_URL || 'http://localhost:5000/api');
+// Hardcoded to the deployed Render backend.
+// If you need to test against your local backend, temporarily change
+// this to 'http://localhost:5000/api' and remember to switch it back
+// before committing.
+const API_URL = 'https://learnhub-wr91.onrender.com/api';
 
 const api = axios.create({
   baseURL: API_URL,
