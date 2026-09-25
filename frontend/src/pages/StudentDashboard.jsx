@@ -303,16 +303,8 @@ function StudentDashboard() {
         })}
       </div>
 
-      {/* ═════════════ MAIN GRID ═════════════ */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)',
-          gap: '1.5rem',
-          alignItems: 'start',
-        }}
-        className="dashboard-grid"
-      >
+      {/* ═════════════ MAIN GRID (responsive via CSS class) ═════════════ */}
+      <div className="dashboard-grid">
         {/* LEFT COLUMN */}
         <div>
           {/* OVERVIEW */}
@@ -378,7 +370,7 @@ function StudentDashboard() {
                     </div>
                   </div>
 
-                  {/* ✅ Instructor strip */}
+                  {/* Instructor strip */}
                   {currentCourse.instructorId && (
                     <InstructorCard instructorId={currentCourse.instructorId} variant="compact" />
                   )}

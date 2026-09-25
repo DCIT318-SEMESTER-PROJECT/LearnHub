@@ -85,18 +85,40 @@ function MemberProfileModal({ userId, onClose }) {
           animation: 'profilePop 0.2s ease-out',
         }}
       >
-        {/* Header band */}
+        {/* ═══════ HEADER BAND + AVATAR (avatar now nested inside) ═══════ */}
         <div
           style={{
             position: 'relative',
-            height: '120px',
+            height: '160px',
             background: 'linear-gradient(135deg, #6c5ce7 0%, #8b7cf0 55%, #a29bfe 100%)',
             flexShrink: 0,
           }}
         >
-          <div style={{ position: 'absolute', top: '-40px', right: '-30px', width: '140px', height: '140px', borderRadius: '50%', background: 'rgba(255,255,255,0.10)' }} />
-          <div style={{ position: 'absolute', bottom: '-60px', left: '20%', width: '110px', height: '110px', borderRadius: '50%', background: 'rgba(255,255,255,0.07)' }} />
+          {/* Decorative circles (kept inside header band) */}
+          <div
+            style={{
+              position: 'absolute',
+              top: '-40px',
+              right: '-30px',
+              width: '140px',
+              height: '140px',
+              borderRadius: '50%',
+              background: 'rgba(255,255,255,0.10)',
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '-60px',
+              left: '20%',
+              width: '110px',
+              height: '110px',
+              borderRadius: '50%',
+              background: 'rgba(255,255,255,0.07)',
+            }}
+          />
 
+          {/* Close button */}
           <button
             onClick={onClose}
             aria-label="Close profile"
@@ -123,6 +145,7 @@ function MemberProfileModal({ userId, onClose }) {
             ✕
           </button>
 
+          {/* ✅ Avatar — inside the header band, half in, half out */}
           {data?.user && (
             <div
               style={{
@@ -141,12 +164,16 @@ function MemberProfileModal({ userId, onClose }) {
                 color: 'white',
                 fontSize: '2.2rem',
                 fontWeight: 700,
-                boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
+                boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
                 zIndex: 1,
               }}
             >
               {isImageUrl(data.user.avatarUrl) ? (
-                <img src={data.user.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <img
+                  src={data.user.avatarUrl}
+                  alt=""
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
               ) : (
                 initials(data.user.firstName, data.user.lastName)
               )}
@@ -154,8 +181,14 @@ function MemberProfileModal({ userId, onClose }) {
           )}
         </div>
 
-        {/* Body */}
-        <div style={{ padding: '4rem 1.75rem 1.75rem', flex: 1, overflowY: 'auto' }}>
+        {/* ═══════ BODY ═══════ */}
+        <div
+          style={{
+            padding: '4rem 1.75rem 1.75rem',
+            flex: 1,
+            overflowY: 'auto',
+          }}
+        >
           {loading ? (
             <div style={{ padding: '2rem 0', textAlign: 'center', color: 'var(--text-tertiary)' }}>
               Loading profile…
@@ -167,8 +200,24 @@ function MemberProfileModal({ userId, onClose }) {
           ) : data?.user ? (
             <>
               {/* Name + role */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
-                <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.15 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.6rem',
+                  flexWrap: 'wrap',
+                  marginBottom: '0.5rem',
+                }}
+              >
+                <h2
+                  style={{
+                    margin: 0,
+                    fontSize: '1.4rem',
+                    fontWeight: 700,
+                    color: 'var(--text-primary)',
+                    lineHeight: 1.15,
+                  }}
+                >
                   {data.user.firstName} {data.user.lastName}
                 </h2>
                 {data.user.isInstructor ? (
@@ -179,7 +228,14 @@ function MemberProfileModal({ userId, onClose }) {
               </div>
 
               {/* Meta chips */}
-              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '0.4rem',
+                  flexWrap: 'wrap',
+                  marginBottom: '1rem',
+                }}
+              >
                 {data.user.streakDays > 0 && (
                   <span style={chip}>🔥 {data.user.streakDays}-day streak</span>
                 )}
@@ -188,12 +244,16 @@ function MemberProfileModal({ userId, onClose }) {
                 )}
                 {data.user.createdAt && (
                   <span style={chip}>
-                    📅 Joined {new Date(data.user.createdAt).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}
+                    📅 Joined{' '}
+                    {new Date(data.user.createdAt).toLocaleDateString(undefined, {
+                      month: 'short',
+                      year: 'numeric',
+                    })}
                   </span>
                 )}
               </div>
 
-              {/* ✅ Message button (hidden on own profile) */}
+              {/* Message button (hidden on own profile) */}
               {!isSelf && (
                 <button
                   onClick={handleMessage}
@@ -279,21 +339,74 @@ function MemberProfileModal({ userId, onClose }) {
                         }}
                       >
                         {isImageUrl(c.imageUrl) ? (
-                          <img src={c.imageUrl} alt="" style={{ width: '36px', height: '36px', borderRadius: '8px', objectFit: 'cover', flexShrink: 0 }} />
+                          <img
+                            src={c.imageUrl}
+                            alt=""
+                            style={{
+                              width: '36px',
+                              height: '36px',
+                              borderRadius: '8px',
+                              objectFit: 'cover',
+                              flexShrink: 0,
+                            }}
+                          />
                         ) : (
-                          <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'var(--accent-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem', flexShrink: 0 }}>
+                          <div
+                            style={{
+                              width: '36px',
+                              height: '36px',
+                              borderRadius: '8px',
+                              background: 'var(--accent-light)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '1.1rem',
+                              flexShrink: 0,
+                            }}
+                          >
                             📘
                           </div>
                         )}
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: '0.2rem' }}>
+                          <div
+                            style={{
+                              fontSize: '0.85rem',
+                              color: 'var(--text-primary)',
+                              fontWeight: 600,
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              marginBottom: '0.2rem',
+                            }}
+                          >
                             {c.title}
                           </div>
-                          <div style={{ height: '5px', background: 'var(--bg-card)', borderRadius: '3px', overflow: 'hidden' }}>
-                            <div style={{ height: '100%', width: `${c.progressPercentage || 0}%`, background: '#6c5ce7', borderRadius: '3px' }} />
+                          <div
+                            style={{
+                              height: '5px',
+                              background: 'var(--bg-card)',
+                              borderRadius: '3px',
+                              overflow: 'hidden',
+                            }}
+                          >
+                            <div
+                              style={{
+                                height: '100%',
+                                width: `${c.progressPercentage || 0}%`,
+                                background: '#6c5ce7',
+                                borderRadius: '3px',
+                              }}
+                            />
                           </div>
                         </div>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', fontWeight: 600, flexShrink: 0 }}>
+                        <span
+                          style={{
+                            fontSize: '0.75rem',
+                            color: 'var(--text-tertiary)',
+                            fontWeight: 600,
+                            flexShrink: 0,
+                          }}
+                        >
                           {c.progressPercentage || 0}%
                         </span>
                       </div>
@@ -317,8 +430,14 @@ function MemberProfileModal({ userId, onClose }) {
                           fontSize: '0.85rem',
                         }}
                       >
-                        <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{g.name}</span>
-                        {g.courseTitle && <span style={{ color: 'var(--text-tertiary)' }}> · {g.courseTitle}</span>}
+                        <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
+                          {g.name}
+                        </span>
+                        {g.courseTitle && (
+                          <span style={{ color: 'var(--text-tertiary)' }}>
+                            {' '}· {g.courseTitle}
+                          </span>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -339,17 +458,20 @@ function MemberProfileModal({ userId, onClose }) {
   );
 }
 
+/* ─── Small helpers ──────────────────────────────── */
 function Section({ title, children, isLast = false }) {
   return (
     <div style={{ marginBottom: isLast ? 0 : '1.35rem' }}>
-      <h4 style={{
-        margin: '0 0 0.6rem',
-        fontSize: '0.72rem',
-        textTransform: 'uppercase',
-        letterSpacing: '0.08em',
-        color: 'var(--text-tertiary)',
-        fontWeight: 700,
-      }}>
+      <h4
+        style={{
+          margin: '0 0 0.6rem',
+          fontSize: '0.72rem',
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          color: 'var(--text-tertiary)',
+          fontWeight: 700,
+        }}
+      >
         {title}
       </h4>
       {children}
@@ -359,8 +481,22 @@ function Section({ title, children, isLast = false }) {
 
 const roleBadge = (type) =>
   type === 'instructor'
-    ? { padding: '0.2rem 0.65rem', background: '#fef3c7', color: '#92400e', borderRadius: '20px', fontSize: '0.7rem', fontWeight: 700 }
-    : { padding: '0.2rem 0.65rem', background: '#f0eeff', color: '#6c5ce7', borderRadius: '20px', fontSize: '0.7rem', fontWeight: 700 };
+    ? {
+        padding: '0.2rem 0.65rem',
+        background: '#fef3c7',
+        color: '#92400e',
+        borderRadius: '20px',
+        fontSize: '0.7rem',
+        fontWeight: 700,
+      }
+    : {
+        padding: '0.2rem 0.65rem',
+        background: '#f0eeff',
+        color: '#6c5ce7',
+        borderRadius: '20px',
+        fontSize: '0.7rem',
+        fontWeight: 700,
+      };
 
 const chip = {
   padding: '0.25rem 0.65rem',
