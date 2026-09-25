@@ -366,3 +366,113 @@ exports.deleteLesson = async (req, res) => {
     res.status(500).json({ error: 'Failed to delete lesson: ' + error.message });
   }
 };
+// ═══════════════════════════════════════════════════════
+// BATCH MODULE IMPORT  (Phase 3 — Book → Modules)
+// ═══════════════════════════════════════════════════════
+exports.bulkCreateModules = async (req, res) => {
+  try {
+    const { id: courseId } = req.params;
+    const { modules } = req.body;
+    const instructorId = req.userId;
+
+    // Verify course ownership
+    const course = await db.getAsync(
+      'SELECT * FROM courses WHERE id = ? AND instructorId = ?',
+      [courseId, instructorId]
+    );
+    if (!course) {
+      return res.status(403).json({ error: 'Not your course' });
+    }
+
+    if (!Array.isArray(modules) || modules.length === 0) {
+      return res.status(400).json({ error: 'At least one module is required' });
+    }
+
+    // Validate shape
+    for (const m of modules) {
+      if (!m.title || !m.title.trim()) {
+        return res.status(400).json({ error: 'Every module needs a title' });
+      }
+      if (!Array.isArray(m.lessons) || m.lessons.length === 0) {
+        return res.status(400).json({ error: `Module "${m.title}" has no lessons` });
+      }
+    }
+
+    await db.runAsync('BEGIN TRANSACTION');
+
+    const created = [];
+
+    // Determine starting orderNumber for modules on this course
+    const lastMod = await db.getAsync(
+      'SELECT MAX(orderNumber) as maxOrder FROM course_modules WHERE courseId = ?',
+      [courseId]
+    );
+    let nextModuleOrder = (lastMod?.maxOrder || 0) + 1;
+
+    for (const m of modules) {
+      // Insert module
+      const modResult = await db.runAsync(
+        `INSERT INTO course_modules (courseId, title, description, orderNumber)
+         VALUES (?, ?, ?, ?)`,
+        [courseId, m.title.trim(), (m.description || '').trim(), nextModuleOrder++]
+      );
+
+      const moduleId = modResult.lastID;
+      const createdLessons = [];
+
+      // Determine starting orderNumber for lessons in this module
+      let nextLessonOrder = 1;
+
+      for (const l of m.lessons) {
+        const lessonResult = await db.runAsync(
+          `INSERT INTO lessons (
+            courseId, moduleId, title, description, content,
+            orderNumber, duration, isFree
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+          [
+            courseId,
+            moduleId,
+            l.title.trim(),
+            (l.description || '').trim(),
+            (l.content || '').trim(),
+            nextLessonOrder++,
+            '10 min',
+          ]
+        );
+        createdLessons.push({ id: lessonResult.lastID, title: l.title });
+      }
+
+      created.push({
+        id: moduleId,
+        title: m.title,
+        description: m.description,
+        lessons: createdLessons,
+      });
+    }
+
+    // Update totalLessons on the course
+    const countResult = await db.getAsync(
+      'SELECT COUNT(*) as count FROM lessons WHERE courseId = ?',
+      [courseId]
+    );
+    await db.runAsync(
+      'UPDATE courses SET totalLessons = ? WHERE id = ?',
+      [countResult?.count || 0, courseId]
+    );
+
+    await db.runAsync('COMMIT');
+
+    res.json({
+      success: true,
+      created: created.length,
+      totalLessons: created.reduce((sum, m) => sum + m.lessons.length, 0),
+      modules: created,
+    });
+  } catch (error) {
+    try {
+      await db.runAsync('ROLLBACK');
+    } catch (_) {}
+    console.error('Bulk module import error:', error);
+    res.status(500).json({ error: 'Failed to import modules: ' + error.message });
+  }
+};

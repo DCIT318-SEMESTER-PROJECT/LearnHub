@@ -11,7 +11,9 @@ const enrollmentRoutes = require('./src/routes/enrollmentRoutes');
 const studyGroupRoutes = require('./src/routes/studyGroupRoutes');
 const quizRoutes = require('./src/routes/quizRoutes');
 const ratingRoutes = require('./src/routes/ratingRoutes');
-const aiRoutes = require('./src/routes/aiRoutes'); // ✅ ADDED
+const aiRoutes = require('./src/routes/aiRoutes');
+const publicRoutes = require('./src/routes/publicRoutes');
+const messageRoutes = require('./src/routes/messageRoutes');
 
 // Import models
 const StudyGroup = require('./src/models/StudyGroup');
@@ -20,16 +22,28 @@ const User = require('./src/models/User');
 const app = express();
 const server = http.createServer(app);
 
+// ─── CORS ──────────────────────────────────────
+// Local dev + your future Netlify URL.
+// Replace 'https://learnhub-xxxx.netlify.app' with your actual Netlify URL
+// after you deploy the frontend (Part 4 in the deployment guide).
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
-  'http://localhost:5175'
+  'http://localhost:5175',
+  // 'https://learnhub-xxxx.netlify.app',   // ← uncomment and replace after Netlify deploy
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, curl, Postman)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1 || origin.startsWith('http://localhost')) {
+
+    if (
+      allowedOrigins.indexOf(origin) !== -1 ||
+      origin.startsWith('http://localhost') ||
+      origin.endsWith('.netlify.app') ||           // any Netlify subdomain
+      origin.endsWith('.onrender.com')             // any Render subdomain
+    ) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
@@ -37,41 +51,53 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 }));
 
 app.options('*', cors());
 
+// ─── Socket.io ─────────────────────────────────
 const io = new Server(server, {
   cors: {
     origin: function (origin, callback) {
       if (!origin) return callback(null, true);
-      if (allowedOrigins.indexOf(origin) !== -1 || origin.startsWith('http://localhost')) {
+      if (
+        allowedOrigins.indexOf(origin) !== -1 ||
+        origin.startsWith('http://localhost') ||
+        origin.endsWith('.netlify.app') ||
+        origin.endsWith('.onrender.com')
+      ) {
         callback(null, true);
       } else {
         callback(new Error('Not allowed by CORS'));
       }
     },
-    methods: ["GET", "POST"],
-    credentials: true
-  }
+    methods: ['GET', 'POST'],
+    credentials: true,
+  },
 });
 
+// ─── Body Parsers ──────────────────────────────
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ limit: '5mb', extended: true }));
 
+// ─── Routes ────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/enrollments', enrollmentRoutes);
 app.use('/api/study-groups', studyGroupRoutes);
 app.use('/api/quizzes', quizRoutes);
 app.use('/api/ratings', ratingRoutes);
-app.use('/api/ai', aiRoutes); // ✅ ADDED
+app.use('/api/ai', aiRoutes);
+app.use('/api/public', publicRoutes);
+app.use('/api/messages', messageRoutes);
 
+// ─── Health check ──────────────────────────────
 app.get('/api/test', (req, res) => {
   res.json({ message: 'LearnHub API is running! 🚀' });
 });
 
+// ─── Socket.io auth + handlers ─────────────────
 io.use(async (socket, next) => {
   try {
     const token = socket.handshake.auth.token;
@@ -100,7 +126,7 @@ io.on('connection', (socket) => {
       io.to(`group-${groupId}`).emit('new-message', {
         ...newMessage,
         firstName: user ? user.firstName : 'Unknown',
-        lastName: user ? user.lastName : ''
+        lastName: user ? user.lastName : '',
       });
     } catch (error) {
       console.error('Error sending message:', error);
@@ -110,7 +136,10 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => console.log('🔴 User disconnected:', socket.userId));
 });
 
+// ─── Start server ──────────────────────────────
+// ✅ FIX: Render assigns a port dynamically. Falling back to 5000 for local dev.
 const PORT = process.env.PORT || 5000;
+
 server.listen(PORT, () => {
   console.log(`🚀 LearnHub API running on http://localhost:${PORT}`);
   console.log(`📡 WebSocket server running on ws://localhost:${PORT}`);

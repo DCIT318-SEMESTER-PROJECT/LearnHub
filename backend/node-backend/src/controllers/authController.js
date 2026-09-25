@@ -3,6 +3,7 @@ const Achievement = require('../models/Achievement');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../config/database');
+const emailService = require('../utils/emailService');   // ✅ ADDED
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
@@ -72,6 +73,14 @@ exports.register = async (req, res) => {
     const token = jwt.sign({ id: userId, email }, JWT_SECRET, { expiresIn: '7d' });
 
     console.log('✅ User registered successfully:', email, 'as', userRole);
+
+    // ✅ Send welcome email (fire and forget — never blocks the response)
+    emailService.sendWelcomeEmail({
+      firstName: cleanFirstName,
+      lastName: cleanLastName,
+      email,
+      role: userRole,
+    }).catch(err => console.error('Welcome email error:', err.message));
 
     res.status(201).json({
       message: 'User created successfully',
@@ -410,8 +419,6 @@ exports.getInstructorProfile = async (req, res) => {
 
     const initials = `${instructor.firstName?.[0] || ''}${instructor.lastName?.[0] || ''}`.toUpperCase();
 
-    console.log(`📊 Instructor ${instructorId} stats: courses=${totalCourses}, lessons=${totalLessons}, students=${totalStudents}, rating=${averageRating}`);
-
     res.json({
       instructor: { ...instructor, initials },
       courses: courses.map(c => ({
@@ -460,7 +467,6 @@ exports.getInstructorDashboard = async (req, res) => {
       ? parseFloat((ratedCourses.reduce((s, c) => s + c.rating, 0) / ratedCourses.length).toFixed(1))
       : 0;
 
-    // Make sure instructor badges are up to date, then fetch them
     try {
       await Achievement.checkAndAwardInstructorAchievements(instructorId);
     } catch (badgeErr) {

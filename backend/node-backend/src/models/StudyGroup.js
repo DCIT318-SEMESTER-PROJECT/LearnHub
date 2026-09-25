@@ -144,12 +144,16 @@ class StudyGroup {
     );
   }
 
-  static async addMessage(studyGroupId, userId, message) {
+  static async addMessage(studyGroupId, userId, message, attachment = null) {
+    const { data = null, type = null, name = null } = attachment || {};
+
     const result = await db.runAsync(
-      `INSERT INTO study_group_messages (studyGroupId, userId, message, sentAt)
-       VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
-      [studyGroupId, userId, message]
+      `INSERT INTO study_group_messages
+         (studyGroupId, userId, message, sentAt, attachmentData, attachmentType, attachmentName)
+       VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)`,
+      [studyGroupId, userId, message, data, type, name]
     );
+
     return await db.getAsync(
       `SELECT m.*, u.firstName, u.lastName, u.email, u.avatarUrl
        FROM study_group_messages m

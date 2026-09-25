@@ -3,11 +3,7 @@ const router = express.Router();
 const courseController = require('../controllers/courseController');
 const { authenticate } = require('../middleware/auth');
 
-// ═══════════════════════════════════════════════════
-// INSTRUCTOR ROUTES (must come first to avoid conflicts)
-// ═══════════════════════════════════════════════════
-
-// Instructor dashboard
+// Instructor routes (must come first to avoid conflicts)
 router.get('/instructor/my-courses', authenticate, courseController.getMyCourses);
 router.get('/instructor/:id/edit', authenticate, courseController.getCourseForEdit);
 
@@ -17,6 +13,9 @@ router.put('/instructor/:id', authenticate, courseController.updateCourse);
 router.delete('/instructor/:id', authenticate, courseController.deleteCourse);
 router.post('/instructor/:id/publish', authenticate, courseController.publishCourse);
 router.post('/instructor/:id/unpublish', authenticate, courseController.unpublishCourse);
+
+// ✅ NEW — bulk module import from AI outline
+router.post('/instructor/:id/bulk-modules', authenticate, courseController.bulkCreateModules);
 
 // Module management
 router.post('/instructor/:courseId/modules', authenticate, courseController.addModule);
@@ -28,16 +27,10 @@ router.post('/instructor/:courseId/lessons', authenticate, courseController.addL
 router.put('/instructor/lessons/:lessonId', authenticate, courseController.updateLesson);
 router.delete('/instructor/lessons/:lessonId', authenticate, courseController.deleteLesson);
 
-// ═══════════════════════════════════════════════════
-// PUBLIC ROUTES
-// ═══════════════════════════════════════════════════
-
+// Public routes
 router.get('/', courseController.getAllCourses);
 
-// ═══════════════════════════════════════════════════
-// STUDENT ROUTES (single course, enrollments, progress)
-// ═══════════════════════════════════════════════════
-
+// Student routes
 router.get('/:id', authenticate, courseController.getCourseById);
 router.post('/:courseId/enroll', authenticate, courseController.enrollInCourse);
 router.delete('/:courseId/unenroll', authenticate, courseController.unenrollFromCourse);

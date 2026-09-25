@@ -181,17 +181,139 @@ exports.getMessages = async (req, res) => {
 exports.sendMessage = async (req, res) => {
   try {
     const { groupId } = req.params;
-    const { message } = req.body;
+    const { message, attachment } = req.body;
     const userId = req.userId;
-    if (!message || !message.trim()) return res.status(400).json({ error: 'Message is required' });
+
+    if ((!message || !message.trim()) && !attachment) {
+      return res.status(400).json({ error: 'Message or attachment is required' });
+    }
 
     const isMember = await StudyGroup.isMember(groupId, userId);
     if (!isMember) return res.status(403).json({ error: 'You must be a member to send messages' });
 
-    const newMessage = await StudyGroup.addMessage(groupId, userId, message.trim());
+    // Validate attachment shape if present
+    let cleanAttachment = null;
+    if (attachment) {
+      const { data, type, name } = attachment;
+      if (!data || !type || !name) {
+        return res.status(400).json({ error: 'Attachment requires data, type and name' });
+      }
+      // Cap at ~2.7MB base64 (~2MB original)
+      if (data.length > 2.7 * 1024 * 1024) {
+        return res.status(400).json({ error: 'Attachment is too large (max 2MB)' });
+      }
+      cleanAttachment = { data, type, name };
+    }
+
+    const newMessage = await StudyGroup.addMessage(
+      groupId,
+      userId,
+      (message || '').trim(),
+      cleanAttachment
+    );
     res.status(201).json(newMessage);
   } catch (error) {
     console.error('Error sending message:', error);
     res.status(500).json({ error: 'Failed to send message' });
+  }
+};
+
+// ═══════════════════════════════════════════════════════
+// MEMBER PREVIEWS — 4 avatars per group
+// ═══════════════════════════════════════════════════════
+exports.getMemberPreviews = async (req, res) => {
+  try {
+    const { groupIds } = req.query;
+    if (!groupIds) return res.json({});
+
+    const ids = String(groupIds)
+      .split(',')
+      .map((s) => parseInt(s))
+      .filter(Number.isFinite);
+    if (ids.length === 0) return res.json({});
+
+    const placeholders = ids.map(() => '?').join(',');
+    const rows = await db.allAsync(
+      `SELECT sgm.studyGroupId, u.id, u.firstName, u.lastName, u.avatarUrl, sgm.isAdmin
+       FROM study_group_members sgm
+       JOIN users u ON sgm.userId = u.id
+       WHERE sgm.studyGroupId IN (${placeholders})
+       ORDER BY sgm.isAdmin DESC, sgm.joinedAt ASC`,
+      ids
+    );
+
+    const byGroup = {};
+    for (const row of rows) {
+      if (!byGroup[row.studyGroupId]) byGroup[row.studyGroupId] = [];
+      if (byGroup[row.studyGroupId].length < 5) {
+        byGroup[row.studyGroupId].push({
+          id: row.id,
+          firstName: row.firstName,
+          lastName: row.lastName,
+          avatarUrl: row.avatarUrl,
+          isAdmin: !!row.isAdmin,
+        });
+      }
+    }
+
+    res.json(byGroup);
+  } catch (error) {
+    console.error('Error fetching member previews:', error);
+    res.status(500).json({ error: 'Failed to fetch member previews' });
+  }
+};
+
+// ═══════════════════════════════════════════════════════
+// MEMBER PROFILE — public info
+// ═══════════════════════════════════════════════════════
+exports.getMemberProfile = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // ✅ FIX: removed "headline" — not in your users table
+    const user = await db.getAsync(
+      `SELECT id, firstName, lastName, avatarUrl, bio, role, isInstructor,
+              expertise, streakDays, createdAt
+       FROM users WHERE id = ?`,
+      [userId]
+    );
+
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const achievements = await db.allAsync(
+      `SELECT a.name, a.icon, a.description, ua.earnedAt
+       FROM user_achievements ua
+       JOIN achievements a ON ua.achievementId = a.id
+       WHERE ua.userId = ?
+       ORDER BY ua.earnedAt DESC
+       LIMIT 8`,
+      [userId]
+    );
+
+    const enrollments = await db.allAsync(
+      `SELECT c.id, c.title, c.imageUrl, e.progressPercentage
+       FROM enrollments e
+       JOIN courses c ON e.courseId = c.id
+       WHERE e.userId = ?
+       ORDER BY e.enrolledAt DESC
+       LIMIT 4`,
+      [userId]
+    );
+
+    const groups = await db.allAsync(
+      `SELECT sg.id, sg.name, c.title as courseTitle
+       FROM study_group_members sgm
+       JOIN study_groups sg ON sgm.studyGroupId = sg.id
+       LEFT JOIN courses c ON sg.courseId = c.id
+       WHERE sgm.userId = ? AND sg.isActive = 1
+       ORDER BY sgm.joinedAt DESC
+       LIMIT 6`,
+      [userId]
+    );
+
+    res.json({ user, achievements, enrollments, groups });
+  } catch (error) {
+    console.error('Error fetching member profile:', error);
+    res.status(500).json({ error: 'Failed to fetch member profile' });
   }
 };

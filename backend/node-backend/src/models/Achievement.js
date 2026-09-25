@@ -1,7 +1,7 @@
 const db = require('../config/database');
 
 class Achievement {
-  // ─── Existing student methods unchanged ─────────────────
+  // ─── Fetch badges for a user ─────────────────────────────
   static async getUserBadges(userId) {
     try {
       return await db.allAsync(
@@ -18,13 +18,17 @@ class Achievement {
     }
   }
 
+  // ─── Welcome badge on registration ───────────────────────
   static async awardWelcomeAchievement(userId) {
     try {
       await db.runAsync(
         `INSERT OR IGNORE INTO achievements (name, icon, description)
          VALUES ('👋 Welcome!', '👋', 'Joined LearnHub and started your learning journey')`
       );
-      const achievement = await db.getAsync('SELECT id FROM achievements WHERE name = ?', ['👋 Welcome!']);
+      const achievement = await db.getAsync(
+        'SELECT id FROM achievements WHERE name = ?',
+        ['👋 Welcome!']
+      );
       if (achievement) {
         await db.runAsync(
           'INSERT OR IGNORE INTO user_achievements (userId, achievementId, earnedAt) VALUES (?, ?, CURRENT_TIMESTAMP)',
@@ -39,6 +43,9 @@ class Achievement {
     }
   }
 
+  // ═══════════════════════════════════════════════════════
+  // STUDENT BADGES
+  // ═══════════════════════════════════════════════════════
   static async checkAndAwardAchievements(userId) {
     const achievements = [];
     try {
@@ -101,11 +108,10 @@ class Achievement {
   static async checkAndAwardInstructorAchievements(userId) {
     const achievements = [];
     try {
-      // Only run for instructors
       const user = await db.getAsync('SELECT isInstructor FROM users WHERE id = ?', [userId]);
       if (!user || !user.isInstructor) return achievements;
 
-      // Courses stats
+      // Course stats
       const courseStats = await db.getAsync(
         `SELECT
            COUNT(*) as totalCourses,
@@ -116,7 +122,7 @@ class Achievement {
       const totalCourses = courseStats?.totalCourses || 0;
       const publishedCourses = courseStats?.publishedCourses || 0;
 
-      // Students stats
+      // Students across all courses
       const studentsResult = await db.getAsync(
         `SELECT COUNT(DISTINCT e.userId) as count
          FROM enrollments e
@@ -126,9 +132,9 @@ class Achievement {
       );
       const totalStudents = studentsResult?.count || 0;
 
-      // Rating stats
+      // Rating stats — ✅ FIX: r.rating (was ambiguous with courses.rating)
       const ratingsResult = await db.getAsync(
-        `SELECT COUNT(*) as totalReviews, COALESCE(AVG(rating), 0) as avgRating
+        `SELECT COUNT(*) as totalReviews, COALESCE(AVG(r.rating), 0) as avgRating
          FROM course_ratings r
          JOIN courses c ON r.courseId = c.id
          WHERE c.instructorId = ?`,
@@ -191,7 +197,7 @@ class Achievement {
     return achievements;
   }
 
-  // ─── shared helper ─────────────────────────────────────
+  // ─── Shared helper: award a list of badges idempotently ──
   static async _awardMany(userId, achievements) {
     for (const ach of achievements) {
       const existing = await db.getAsync(
@@ -206,6 +212,7 @@ class Achievement {
         `INSERT OR IGNORE INTO achievements (name, icon, description) VALUES (?, ?, ?)`,
         [ach.name, ach.icon, ach.description]
       );
+
       const achievement = await db.getAsync('SELECT id FROM achievements WHERE name = ?', [ach.name]);
       if (achievement) {
         await db.runAsync(

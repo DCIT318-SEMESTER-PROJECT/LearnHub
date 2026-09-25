@@ -16,17 +16,33 @@ class Course {
   }
 
   static async findById(id) {
-    const course = await db.getAsync('SELECT * FROM courses WHERE id = ? AND isPublished = 1', [id]);
-    if (course) {
-      const result = await db.getAsync(
-        'SELECT COUNT(*) as count FROM enrollments WHERE courseId = ?',
-        [course.id]
-      );
-      course.totalReviews = result ? result.count : 0;
-    }
-    return course;
+  const course = await db.getAsync('SELECT * FROM courses WHERE id = ? AND isPublished = 1', [id]);
+  if (!course) return null;
+
+  const result = await db.getAsync(
+    'SELECT COUNT(*) as count FROM enrollments WHERE courseId = ?',
+    [course.id]
+  );
+  course.totalReviews = result ? result.count : 0;
+
+  // Fetch quiz if it exists
+  const quiz = await db.getAsync(
+    'SELECT * FROM quizzes WHERE courseId = ? ORDER BY id DESC LIMIT 1',
+    [course.id]
+  );
+
+  if (quiz) {
+    const questions = await db.allAsync(
+      'SELECT * FROM quiz_questions WHERE quizId = ? ORDER BY orderNumber ASC, id ASC',
+      [quiz.id]
+    );
+    course.quiz = { id: quiz.id, title: quiz.title, questions };
+  } else {
+    course.quiz = null;
   }
 
+  return course;
+}
   static async getLessons(courseId) {
     return await db.allAsync(
       'SELECT * FROM lessons WHERE courseId = ? ORDER BY orderNumber',
