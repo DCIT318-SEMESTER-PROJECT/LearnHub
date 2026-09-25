@@ -11,6 +11,7 @@ const enrollmentRoutes = require('./src/routes/enrollmentRoutes');
 const studyGroupRoutes = require('./src/routes/studyGroupRoutes');
 const quizRoutes = require('./src/routes/quizRoutes');
 const ratingRoutes = require('./src/routes/ratingRoutes');
+const aiRoutes = require('./src/routes/aiRoutes'); // ✅ ADDED
 
 // Import models
 const StudyGroup = require('./src/models/StudyGroup');
@@ -65,6 +66,7 @@ app.use('/api/enrollments', enrollmentRoutes);
 app.use('/api/study-groups', studyGroupRoutes);
 app.use('/api/quizzes', quizRoutes);
 app.use('/api/ratings', ratingRoutes);
+app.use('/api/ai', aiRoutes); // ✅ ADDED
 
 app.get('/api/test', (req, res) => {
   res.json({ message: 'LearnHub API is running! 🚀' });

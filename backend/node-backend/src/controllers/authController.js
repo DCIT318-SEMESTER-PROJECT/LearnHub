@@ -137,7 +137,8 @@ exports.login = async (req, res) => {
         expertise: updatedUser.expertise || '',
         headline: updatedUser.headline || '',
         achievements: achievements,
-        totalLearningHours: updatedUser.totalLearningHours || 0
+        totalLearningHours: updatedUser.totalLearningHours || 0,
+        createdAt: updatedUser.createdAt
       }
     });
   } catch (error) {
@@ -304,7 +305,7 @@ exports.getDashboardSummary = async (req, res) => {
     const badgesCount = badgesResult ? badgesResult.count : 0;
 
     const currentCourse = await db.getAsync(
-      `SELECT e.*, c.title, c.imageUrl, c.duration, c.instructorName,
+      `SELECT e.*, c.title, c.imageUrl, c.duration, c.instructorName, c.instructorId,
               (SELECT COUNT(*) FROM lessons WHERE courseId = c.id) as totalLessons
        FROM enrollments e
        JOIN courses c ON e.courseId = c.id
@@ -324,7 +325,8 @@ exports.getDashboardSummary = async (req, res) => {
         completedLessons: currentCourse.completedLessons || 0,
         totalLessons: currentCourse.totalLessons || 0,
         duration: currentCourse.duration,
-        instructorName: currentCourse.instructorName
+        instructorName: currentCourse.instructorName,
+        instructorId: currentCourse.instructorId
       };
     }
 
@@ -363,11 +365,9 @@ exports.getDashboardSummary = async (req, res) => {
 
 exports.getInstructorProfile = async (req, res) => {
   try {
-    // ✅ FIX: route is /instructor/:id, so param is req.params.id
     const instructorId = req.params.id;
     console.log('👨‍🏫 Getting instructor profile:', instructorId);
 
-    // ✅ FIX: only select columns that exist in your `users` table
     const instructor = await db.getAsync(
       `SELECT id, firstName, lastName, avatarUrl, bio,
               instructorBio, expertise, yearsExperience, role, createdAt
@@ -432,9 +432,64 @@ exports.getInstructorProfile = async (req, res) => {
   }
 };
 
+// ═══════════════════════════════════════════════════
+// INSTRUCTOR DASHBOARD (with badges)
+// ═══════════════════════════════════════════════════
+
+exports.getInstructorDashboard = async (req, res) => {
+  try {
+    const instructorId = req.userId;
+
+    const courses = await db.allAsync(
+      `SELECT c.id, c.title, c.description, c.imageUrl, c.difficultyLevel,
+              c.duration, c.price, c.rating, c.totalLessons, c.isPublished, c.createdAt,
+              (SELECT COUNT(*) FROM enrollments WHERE courseId = c.id) as students,
+              (SELECT COUNT(*) FROM lessons WHERE courseId = c.id) as actualLessons
+       FROM courses c
+       WHERE c.instructorId = ?
+       ORDER BY c.createdAt DESC`,
+      [instructorId]
+    );
+
+    const totalCourses = courses.length;
+    const publishedCourses = courses.filter(c => c.isPublished === 1).length;
+    const totalLessons = courses.reduce((s, c) => s + (c.actualLessons || 0), 0);
+    const totalStudents = courses.reduce((s, c) => s + (c.students || 0), 0);
+    const ratedCourses = courses.filter(c => c.rating && c.rating > 0);
+    const averageRating = ratedCourses.length
+      ? parseFloat((ratedCourses.reduce((s, c) => s + c.rating, 0) / ratedCourses.length).toFixed(1))
+      : 0;
+
+    // Make sure instructor badges are up to date, then fetch them
+    try {
+      await Achievement.checkAndAwardInstructorAchievements(instructorId);
+    } catch (badgeErr) {
+      console.warn('Instructor badge check failed (non-fatal):', badgeErr.message);
+    }
+    const achievements = await Achievement.getUserBadges(instructorId);
+
+    res.json({
+      courses: courses.map(c => ({
+        ...c,
+        totalLessons: c.actualLessons || c.totalLessons || 0
+      })),
+      stats: {
+        totalCourses,
+        publishedCourses,
+        totalStudents,
+        totalLessons,
+        averageRating
+      },
+      achievements
+    });
+  } catch (error) {
+    console.error('Error fetching instructor dashboard:', error);
+    res.status(500).json({ error: 'Failed to fetch instructor dashboard' });
+  }
+};
+
 exports.getAllInstructors = async (req, res) => {
   try {
-    // ✅ FIX: only select columns that exist
     const instructors = await db.allAsync(
       `SELECT u.id, u.firstName, u.lastName, u.avatarUrl, u.expertise, u.yearsExperience,
               (SELECT COUNT(*) FROM courses WHERE instructorId = u.id AND isPublished = 1) as courseCount

@@ -18,13 +18,12 @@ router.delete('/avatar', authenticate, authController.removeAvatar);
 // Achievement routes
 router.get('/achievements', authenticate, authController.getAchievements);
 
-// Dashboard summary (for homepage personalization)
+// Dashboard routes
 router.get('/dashboard-summary', authenticate, authController.getDashboardSummary);
+router.get('/instructor-dashboard', authenticate, authController.getInstructorDashboard);
 
-// ✅ Instructor profile + dashboard stats (courses, students, lessons, rating)
+// Instructor routes
 router.get('/instructor/:id', authController.getInstructorProfile);
-
-// All instructors (public list)
 router.get('/instructors', authController.getAllInstructors);
 
 // Account management

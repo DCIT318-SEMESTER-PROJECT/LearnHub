@@ -244,6 +244,15 @@ exports.publishCourse = async (req, res) => {
     }
 
     const course = await Course.updateByInstructor(id, instructorId, { isPublished: 1 });
+
+    // ✅ Award instructor badges immediately after publishing
+    try {
+      await Achievement.checkAndAwardInstructorAchievements(instructorId);
+      console.log(`🏆 Instructor badges checked for user ${instructorId} after publishing course ${id}`);
+    } catch (badgeErr) {
+      console.warn('Instructor badge check failed (non-fatal):', badgeErr.message);
+    }
+
     res.json({ message: 'Course published successfully! 🎉', course });
   } catch (error) {
     console.error('Error publishing course:', error);
