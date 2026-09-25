@@ -15,6 +15,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import ConfirmDialog from '../components/common/ConfirmDialog';
 import MemberProfileModal from '../components/common/MemberProfileModal';
+import GroupDetailModal from '../components/studyGroups/GroupDetailModal';
 
 const isImageUrl = (v) =>
   typeof v === 'string' &&
@@ -50,13 +51,15 @@ function StudyGroups() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const messagesEndRef = useRef(null);
 
-  // ✅ File sharing state
   const [pendingAttachment, setPendingAttachment] = useState(null);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const attachInputRef = useRef(null);
 
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [profileUserId, setProfileUserId] = useState(null);
+
+  // ✅ NEW — group detail modal
+  const [detailGroupId, setDetailGroupId] = useState(null);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -175,6 +178,7 @@ function StudyGroups() {
         setSelectedGroup(null);
         setChatMessages([]);
       }
+      if (detailGroupId === groupId) setDetailGroupId(null);
       toast.success('Group deleted');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to delete group');
@@ -217,6 +221,7 @@ function StudyGroups() {
   };
 
   const openChat = async (group) => {
+    setDetailGroupId(null); // close detail modal if open
     setSelectedGroup(group);
     setChatMessages([]);
     setPendingAttachment(null);
@@ -230,7 +235,6 @@ function StudyGroups() {
     setPendingAttachment(null);
   };
 
-  // ✅ Pick a file (images / PDFs / text), read as base64
   const handleAttachmentPick = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -578,10 +582,22 @@ function StudyGroups() {
               onOpen={() => openChat(group)}
               onDelete={() => setConfirmDeleteId(group.id)}
               onViewProfile={(uid) => setProfileUserId(uid)}
+              onOpenDetail={() => setDetailGroupId(group.id)}
             />
           ))}
         </div>
       )}
+
+      {/* Group Detail Modal */}
+      <GroupDetailModal
+        groupId={detailGroupId}
+        onClose={() => setDetailGroupId(null)}
+        onViewMember={(uid) => setProfileUserId(uid)}
+        onChat={(group) => openChat(group)}
+        onJoin={(id) => handleJoin(id)}
+        onLeave={(id) => handleLeave(id)}
+        onDelete={(id) => setConfirmDeleteId(id)}
+      />
 
       {/* Chat modal */}
       {selectedGroup && (
@@ -596,7 +612,7 @@ function StudyGroups() {
             borderRadius: '16px',
             boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
             border: '1px solid var(--border-primary)',
-            zIndex: 1000,
+            zIndex: 1700,
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
@@ -694,7 +710,6 @@ function StudyGroups() {
                       gap: '0.4rem',
                     }}
                   >
-                    {/* Image attachment */}
                     {m.attachmentData && m.attachmentType?.startsWith('image/') && (
                       <img
                         src={m.attachmentData}
@@ -709,7 +724,6 @@ function StudyGroups() {
                       />
                     )}
 
-                    {/* File attachment (non-image) */}
                     {m.attachmentData && !m.attachmentType?.startsWith('image/') && (
                       <a
                         href={m.attachmentData}
@@ -745,7 +759,6 @@ function StudyGroups() {
                       </a>
                     )}
 
-                    {/* Text content */}
                     {m.message && (
                       <div style={{ padding: m.attachmentData ? '0 0.35rem 0.1rem' : 0 }}>
                         {m.message}
@@ -758,7 +771,6 @@ function StudyGroups() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Composer */}
           <form
             onSubmit={handleSend}
             style={{
@@ -770,7 +782,6 @@ function StudyGroups() {
               gap: '0.5rem',
             }}
           >
-            {/* Attachment preview */}
             {pendingAttachment && (
               <div
                 style={{
@@ -829,7 +840,6 @@ function StudyGroups() {
               </div>
             )}
 
-            {/* Input row */}
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               <button
                 type="button"
@@ -929,11 +939,20 @@ function StudyGroups() {
 }
 
 /* ─── GroupCard ──────────────────────────────────────── */
-function GroupCard({ group, members = [], onJoin, onLeave, onOpen, onDelete, onViewProfile }) {
+function GroupCard({ group, members = [], onJoin, onLeave, onOpen, onDelete, onViewProfile, onOpenDetail }) {
   const [hover, setHover] = useState(false);
 
   return (
     <div
+      onClick={onOpenDetail}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpenDetail();
+        }
+      }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
@@ -947,11 +966,13 @@ function GroupCard({ group, members = [], onJoin, onLeave, onOpen, onDelete, onV
         transform: hover ? 'translateY(-3px)' : 'translateY(0)',
         boxShadow: hover ? '0 12px 32px rgba(108,92,231,0.15)' : 'var(--shadow-sm)',
         height: '100%',
+        cursor: 'pointer',
       }}
     >
       {group.courseId && (
         <Link
           to={`/courses/${group.courseId}`}
+          onClick={(e) => e.stopPropagation()}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -1052,10 +1073,28 @@ function GroupCard({ group, members = [], onJoin, onLeave, onOpen, onDelete, onV
               </button>
             ))}
           </div>
-          <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)', fontWeight: 500 }}>
+
+          {/* ✅ Clickable "+N more" — opens group detail */}
+          <button
+            onClick={(e) => { e.stopPropagation(); onOpenDetail(); }}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              fontSize: '0.78rem',
+              color: '#6c5ce7',
+              fontWeight: 600,
+              fontFamily: 'inherit',
+              textDecoration: 'underline',
+              textDecorationColor: 'rgba(108,92,231,0.4)',
+              textUnderlineOffset: '2px',
+            }}
+          >
             {group.members || members.length}
-            {group.members > members.length && ` · +${group.members - members.length} more`}
-          </span>
+            {group.members > members.length ? ` · +${group.members - members.length} more` : ' members'}
+          </button>
+
           {group.isAdmin && (
             <span style={{ fontSize: '0.62rem', color: '#6c5ce7', background: '#f0eeff', padding: '0.15rem 0.5rem', borderRadius: '10px', fontWeight: 700, marginLeft: 'auto' }}>
               ADMIN
@@ -1085,6 +1124,7 @@ function GroupCard({ group, members = [], onJoin, onLeave, onOpen, onDelete, onV
       )}
 
       <div
+        onClick={(e) => e.stopPropagation()}
         style={{
           display: 'flex',
           justifyContent: 'space-between',
