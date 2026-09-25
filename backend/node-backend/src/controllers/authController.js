@@ -6,13 +6,38 @@ const db = require('../config/database');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
+const capitalize = (str) => {
+  if (!str) return '';
+  return str
+    .trim()
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+};
+
 exports.register = async (req, res) => {
   try {
-    const { firstName, lastName, email, password } = req.body;
-    console.log('📝 Registration attempt:', { firstName, lastName, email });
+    const {
+      firstName, lastName, email, password, role,
+      headline, teachingCategory, yearsExperience,
+      expertise, instructorBio, credentials, website, linkedin
+    } = req.body;
+
+    console.log('📝 Registration attempt:', { firstName, lastName, email, role });
 
     if (!firstName || !lastName || !email || !password) {
       return res.status(400).json({ error: 'All fields are required' });
+    }
+
+    const userRole = (role === 'Instructor') ? 'Instructor' : 'Student';
+    const isInstructor = userRole === 'Instructor' ? 1 : 0;
+
+    if (userRole === 'Instructor') {
+      if (!headline || !teachingCategory || !expertise || !instructorBio) {
+        return res.status(400).json({
+          error: 'Please fill in all required instructor fields'
+        });
+      }
     }
 
     const existingUser = await User.findByEmail(email);
@@ -20,16 +45,34 @@ exports.register = async (req, res) => {
       return res.status(400).json({ error: 'Email already exists' });
     }
 
-    const userId = await User.create({ firstName, lastName, email, password });
+    const cleanFirstName = capitalize(firstName);
+    const cleanLastName = capitalize(lastName);
+
+    const userId = await User.create({
+      firstName: cleanFirstName,
+      lastName: cleanLastName,
+      email,
+      password,
+      role: userRole,
+      isInstructor,
+      headline: headline || '',
+      teachingCategory: teachingCategory || '',
+      yearsExperience: parseInt(yearsExperience) || 0,
+      expertise: expertise || '',
+      instructorBio: instructorBio || '',
+      credentials: credentials || '',
+      website: website || '',
+      linkedin: linkedin || ''
+    });
     const user = await User.findById(userId);
-    
+
     await Achievement.awardWelcomeAchievement(userId);
     const achievements = await Achievement.getUserBadges(userId);
-    
+
     const token = jwt.sign({ id: userId, email }, JWT_SECRET, { expiresIn: '7d' });
-    
-    console.log('✅ User registered successfully:', email);
-    
+
+    console.log('✅ User registered successfully:', email, 'as', userRole);
+
     res.status(201).json({
       message: 'User created successfully',
       token,
@@ -38,6 +81,10 @@ exports.register = async (req, res) => {
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
+        role: user.role,
+        isInstructor: !!user.isInstructor,
+        expertise: user.expertise || '',
+        headline: user.headline || '',
         streakDays: user.streakDays || 0,
         achievements: achievements
       }
@@ -59,24 +106,22 @@ exports.login = async (req, res) => {
 
     const user = await User.findByEmail(email);
     if (!user) {
-      console.log('❌ User not found:', email);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) {
-      console.log('❌ Invalid password for:', email);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     await User.updateStreak(user.id);
     const updatedUser = await User.findById(user.id);
     const achievements = await Achievement.getUserBadges(user.id);
-    
+
     const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
-    
-    console.log('✅ Login successful:', email);
-    
+
+    console.log('✅ Login successful:', email, 'as', updatedUser.role);
+
     res.json({
       message: 'Login successful',
       token,
@@ -87,6 +132,10 @@ exports.login = async (req, res) => {
         email: updatedUser.email,
         streakDays: updatedUser.streakDays || 0,
         avatarUrl: updatedUser.avatarUrl || null,
+        role: updatedUser.role || 'Student',
+        isInstructor: !!updatedUser.isInstructor,
+        expertise: updatedUser.expertise || '',
+        headline: updatedUser.headline || '',
         achievements: achievements,
         totalLearningHours: updatedUser.totalLearningHours || 0
       }
@@ -111,6 +160,15 @@ exports.getProfile = async (req, res) => {
       streakDays: user.streakDays || 0,
       totalLearningHours: user.totalLearningHours || 0,
       role: user.role || 'Student',
+      isInstructor: !!user.isInstructor,
+      expertise: user.expertise || '',
+      headline: user.headline || '',
+      instructorBio: user.instructorBio || '',
+      teachingCategory: user.teachingCategory || '',
+      yearsExperience: user.yearsExperience || 0,
+      credentials: user.credentials || '',
+      website: user.website || '',
+      linkedin: user.linkedin || '',
       createdAt: user.createdAt,
       avatarUrl: user.avatarUrl || null,
       bio: user.bio || ''
@@ -126,9 +184,17 @@ exports.updateProfile = async (req, res) => {
     const { firstName, lastName, bio, avatarUrl } = req.body;
     const userId = req.userId;
 
-    await User.updateProfile(userId, { firstName, lastName, bio, avatarUrl });
+    const cleanFirstName = firstName ? capitalize(firstName) : undefined;
+    const cleanLastName = lastName ? capitalize(lastName) : undefined;
+
+    await User.updateProfile(userId, {
+      firstName: cleanFirstName,
+      lastName: cleanLastName,
+      bio,
+      avatarUrl
+    });
     const user = await User.findById(userId);
-    
+
     res.json({
       message: 'Profile updated successfully',
       user: {
@@ -151,7 +217,7 @@ exports.uploadAvatar = async (req, res) => {
   try {
     const userId = req.userId;
     const { avatarData } = req.body;
-    
+
     if (!avatarData) {
       return res.status(400).json({ error: 'No avatar data provided' });
     }
@@ -167,10 +233,10 @@ exports.uploadAvatar = async (req, res) => {
 
     await User.updateAvatar(userId, avatarData);
     const user = await User.findById(userId);
-    
+
     console.log('✅ Avatar updated for user:', userId);
-    
-    res.json({ 
+
+    res.json({
       message: 'Avatar updated successfully',
       avatarUrl: user.avatarUrl
     });
@@ -185,10 +251,8 @@ exports.removeAvatar = async (req, res) => {
     const userId = req.userId;
     await User.updateAvatar(userId, '');
     const user = await User.findById(userId);
-    
-    console.log('✅ Avatar removed for user:', userId);
-    
-    res.json({ 
+
+    res.json({
       message: 'Avatar removed successfully',
       avatarUrl: user.avatarUrl
     });
@@ -212,39 +276,33 @@ exports.getAchievements = async (req, res) => {
 exports.getDashboardSummary = async (req, res) => {
   try {
     const userId = req.userId;
-    console.log('📊 Getting dashboard summary for user:', userId);
-    
+
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
-    // ✅ Count active courses (enrolled but not completed)
+
     const activeCoursesResult = await db.getAsync(
-      `SELECT COUNT(*) as count FROM enrollments 
+      `SELECT COUNT(*) as count FROM enrollments
        WHERE userId = ? AND isCompleted = 0`,
       [userId]
     );
     const activeCoursesCount = activeCoursesResult ? activeCoursesResult.count : 0;
-    
-    // ✅ Calculate total learning hours from lesson_progress watchTimeSeconds
+
     const totalWatchTimeResult = await db.getAsync(
-      `SELECT COALESCE(SUM(watchTimeSeconds), 0) as totalSeconds 
-       FROM lesson_progress 
-       WHERE userId = ?`,
+      `SELECT COALESCE(SUM(watchTimeSeconds), 0) as totalSeconds
+       FROM lesson_progress WHERE userId = ?`,
       [userId]
     );
     const totalSeconds = totalWatchTimeResult ? totalWatchTimeResult.totalSeconds : 0;
     const totalLearningHours = Math.round((totalSeconds / 3600) * 10) / 10;
-    
-    // ✅ Count total badges/achievements
+
     const badgesResult = await db.getAsync(
       `SELECT COUNT(*) as count FROM user_achievements WHERE userId = ?`,
       [userId]
     );
     const badgesCount = badgesResult ? badgesResult.count : 0;
-    
-    // Get the most recent enrollment (in-progress course)
+
     const currentCourse = await db.getAsync(
       `SELECT e.*, c.title, c.imageUrl, c.duration, c.instructorName,
               (SELECT COUNT(*) FROM lessons WHERE courseId = c.id) as totalLessons
@@ -255,7 +313,7 @@ exports.getDashboardSummary = async (req, res) => {
        LIMIT 1`,
       [userId]
     );
-    
+
     let courseData = null;
     if (currentCourse) {
       courseData = {
@@ -269,8 +327,7 @@ exports.getDashboardSummary = async (req, res) => {
         instructorName: currentCourse.instructorName
       };
     }
-    
-    // Get most recent achievement
+
     const recentAchievement = await db.getAsync(
       `SELECT a.name, a.icon, a.description, ua.earnedAt
        FROM user_achievements ua
@@ -280,8 +337,8 @@ exports.getDashboardSummary = async (req, res) => {
        LIMIT 1`,
       [userId]
     );
-    
-    const response = {
+
+    res.json({
       streakDays: user.streakDays || 0,
       activeCourses: activeCoursesCount,
       totalLearningHours: totalLearningHours,
@@ -293,21 +350,103 @@ exports.getDashboardSummary = async (req, res) => {
         description: recentAchievement.description,
         earnedAt: recentAchievement.earnedAt
       } : null
-    };
-    
-    console.log('📊 Dashboard summary:', {
-      streak: response.streakDays,
-      activeCourses: response.activeCourses,
-      hours: response.totalLearningHours,
-      badges: response.badgesCount,
-      hasCourse: !!response.currentCourse,
-      hasAchievement: !!response.recentAchievement
     });
-    
-    res.json(response);
   } catch (error) {
     console.error('Error fetching dashboard summary:', error);
     res.status(500).json({ error: 'Failed to fetch dashboard summary' });
+  }
+};
+
+// ═══════════════════════════════════════════════════
+// INSTRUCTOR PROFILE (with computed stats)
+// ═══════════════════════════════════════════════════
+
+exports.getInstructorProfile = async (req, res) => {
+  try {
+    // ✅ FIX: route is /instructor/:id, so param is req.params.id
+    const instructorId = req.params.id;
+    console.log('👨‍🏫 Getting instructor profile:', instructorId);
+
+    // ✅ FIX: only select columns that exist in your `users` table
+    const instructor = await db.getAsync(
+      `SELECT id, firstName, lastName, avatarUrl, bio,
+              instructorBio, expertise, yearsExperience, role, createdAt
+       FROM users WHERE id = ? AND isInstructor = 1`,
+      [instructorId]
+    );
+
+    if (!instructor) {
+      return res.status(404).json({ error: 'Instructor not found' });
+    }
+
+    const courses = await db.allAsync(
+      `SELECT c.id, c.title, c.description, c.imageUrl, c.difficultyLevel,
+              c.duration, c.price, c.rating, c.totalLessons, c.isPublished, c.createdAt,
+              (SELECT COUNT(*) FROM enrollments WHERE courseId = c.id) as students,
+              (SELECT COUNT(*) FROM lessons WHERE courseId = c.id) as actualLessons
+       FROM courses c
+       WHERE c.instructorId = ?
+       ORDER BY c.createdAt DESC`,
+      [instructorId]
+    );
+
+    const totalCourses = courses.length;
+    const publishedCourses = courses.filter(c => c.isPublished === 1).length;
+    const totalLessons = courses.reduce((sum, c) => sum + (c.actualLessons || 0), 0);
+
+    const studentsResult = await db.getAsync(
+      `SELECT COUNT(DISTINCT e.userId) as count
+       FROM enrollments e
+       JOIN courses c ON e.courseId = c.id
+       WHERE c.instructorId = ?`,
+      [instructorId]
+    );
+    const totalStudents = studentsResult?.count || 0;
+
+    const ratedCourses = courses.filter(c => c.rating && c.rating > 0);
+    const averageRating = ratedCourses.length > 0
+      ? parseFloat((ratedCourses.reduce((sum, c) => sum + c.rating, 0) / ratedCourses.length).toFixed(1))
+      : 0;
+
+    const initials = `${instructor.firstName?.[0] || ''}${instructor.lastName?.[0] || ''}`.toUpperCase();
+
+    console.log(`📊 Instructor ${instructorId} stats: courses=${totalCourses}, lessons=${totalLessons}, students=${totalStudents}, rating=${averageRating}`);
+
+    res.json({
+      instructor: { ...instructor, initials },
+      courses: courses.map(c => ({
+        ...c,
+        totalLessons: c.actualLessons || c.totalLessons || 0
+      })),
+      stats: {
+        totalCourses,
+        publishedCourses,
+        totalStudents,
+        totalLessons,
+        averageRating
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching instructor profile:', error);
+    res.status(500).json({ error: 'Failed to fetch instructor profile' });
+  }
+};
+
+exports.getAllInstructors = async (req, res) => {
+  try {
+    // ✅ FIX: only select columns that exist
+    const instructors = await db.allAsync(
+      `SELECT u.id, u.firstName, u.lastName, u.avatarUrl, u.expertise, u.yearsExperience,
+              (SELECT COUNT(*) FROM courses WHERE instructorId = u.id AND isPublished = 1) as courseCount
+       FROM users u
+       WHERE u.isInstructor = 1
+       ORDER BY u.firstName ASC`
+    );
+
+    res.json(instructors);
+  } catch (error) {
+    console.error('Error fetching instructors:', error);
+    res.status(500).json({ error: 'Failed to fetch instructors' });
   }
 };
 
@@ -325,7 +464,7 @@ exports.deleteAccount = async (req, res) => {
   try {
     const userId = req.userId;
     console.log(`🗑️ Deleting account for user ${userId}`);
-    
+
     await db.runAsync('BEGIN TRANSACTION');
     await db.runAsync('DELETE FROM user_achievements WHERE userId = ?', [userId]);
     await db.runAsync('DELETE FROM study_group_members WHERE userId = ?', [userId]);
@@ -335,8 +474,7 @@ exports.deleteAccount = async (req, res) => {
     await db.runAsync('DELETE FROM enrollments WHERE userId = ?', [userId]);
     await db.runAsync('DELETE FROM users WHERE id = ?', [userId]);
     await db.runAsync('COMMIT');
-    
-    console.log(`✅ Account deleted successfully for user ${userId}`);
+
     res.json({ success: true, message: 'Account deleted successfully' });
   } catch (error) {
     await db.runAsync('ROLLBACK');

@@ -22,7 +22,7 @@ class Achievement {
       // Create welcome achievement
       await db.runAsync(
         `INSERT OR IGNORE INTO achievements (name, icon, description) 
-         VALUES ('👋 Welcome!', '👋', 'Joined LearnHub and started your learning journey')`
+         VALUES (' Welcome!', '👋', 'Joined LearnHub and started your learning journey')`
       );
       
       const achievement = await db.getAsync(

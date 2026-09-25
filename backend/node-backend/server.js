@@ -10,16 +10,15 @@ const courseRoutes = require('./src/routes/courseRoutes');
 const enrollmentRoutes = require('./src/routes/enrollmentRoutes');
 const studyGroupRoutes = require('./src/routes/studyGroupRoutes');
 const quizRoutes = require('./src/routes/quizRoutes');
+const ratingRoutes = require('./src/routes/ratingRoutes');
 
 // Import models
 const StudyGroup = require('./src/models/StudyGroup');
 const User = require('./src/models/User');
 
-// Initialize app
 const app = express();
 const server = http.createServer(app);
 
-// ─── CORS Configuration ───
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
@@ -42,7 +41,6 @@ app.use(cors({
 
 app.options('*', cors());
 
-// Socket.io
 const io = new Server(server, {
   cors: {
     origin: function (origin, callback) {
@@ -58,30 +56,24 @@ const io = new Server(server, {
   }
 });
 
-// ─── INCREASED BODY LIMIT FOR AVATAR UPLOADS ───
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ limit: '5mb', extended: true }));
 
-// Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/enrollments', enrollmentRoutes);
 app.use('/api/study-groups', studyGroupRoutes);
 app.use('/api/quizzes', quizRoutes);
+app.use('/api/ratings', ratingRoutes);
 
-// Test endpoint
 app.get('/api/test', (req, res) => {
   res.json({ message: 'LearnHub API is running! 🚀' });
 });
 
-// ─── Socket.io for Real-time Chat ───
 io.use(async (socket, next) => {
   try {
     const token = socket.handshake.auth.token;
-    if (!token) {
-      return next(new Error('Authentication required'));
-    }
-    
+    if (!token) return next(new Error('Authentication required'));
     const jwt = require('jsonwebtoken');
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
     socket.userId = decoded.id;
@@ -94,24 +86,15 @@ io.use(async (socket, next) => {
 io.on('connection', (socket) => {
   console.log('🟢 User connected:', socket.userId);
 
-  socket.on('join-group', (groupId) => {
-    socket.join(`group-${groupId}`);
-    console.log(`User ${socket.userId} joined group: ${groupId}`);
-  });
-
-  socket.on('leave-group', (groupId) => {
-    socket.leave(`group-${groupId}`);
-    console.log(`User ${socket.userId} left group: ${groupId}`);
-  });
+  socket.on('join-group', (groupId) => socket.join(`group-${groupId}`));
+  socket.on('leave-group', (groupId) => socket.leave(`group-${groupId}`));
 
   socket.on('send-message', async (data) => {
     try {
       const { groupId, message } = data;
       const userId = socket.userId;
-      
       const newMessage = await StudyGroup.addMessage(groupId, userId, message);
       const user = await User.findById(userId);
-      
       io.to(`group-${groupId}`).emit('new-message', {
         ...newMessage,
         firstName: user ? user.firstName : 'Unknown',
@@ -119,36 +102,17 @@ io.on('connection', (socket) => {
       });
     } catch (error) {
       console.error('Error sending message:', error);
-      socket.emit('error', { message: 'Failed to send message' });
     }
   });
 
-  socket.on('typing', (data) => {
-    const { groupId, isTyping } = data;
-    socket.to(`group-${groupId}`).emit('user-typing', {
-      userId: socket.userId,
-      isTyping
-    });
-  });
-
-  socket.on('disconnect', () => {
-    console.log('🔴 User disconnected:', socket.userId);
-  });
+  socket.on('disconnect', () => console.log('🔴 User disconnected:', socket.userId));
 });
 
-// ─── Start Server ───
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`🚀 LearnHub API running on http://localhost:${PORT}`);
   console.log(`📡 WebSocket server running on ws://localhost:${PORT}`);
-  console.log(`🔧 CORS allowed origins: ${allowedOrigins.join(', ')}`);
 });
 
-// Handle uncaught errors
-process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-});
+process.on('uncaughtException', (error) => console.error('Uncaught Exception:', error));
+process.on('unhandledRejection', (reason) => console.error('Unhandled Rejection:', reason));

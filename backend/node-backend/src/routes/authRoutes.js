@@ -21,6 +21,12 @@ router.get('/achievements', authenticate, authController.getAchievements);
 // Dashboard summary (for homepage personalization)
 router.get('/dashboard-summary', authenticate, authController.getDashboardSummary);
 
+// ✅ Instructor profile + dashboard stats (courses, students, lessons, rating)
+router.get('/instructor/:id', authController.getInstructorProfile);
+
+// All instructors (public list)
+router.get('/instructors', authController.getAllInstructors);
+
 // Account management
 router.delete('/account', authenticate, authController.deleteAccount);
 router.get('/users', authenticate, authController.getAllUsers);
