@@ -44,43 +44,50 @@ export default function InboxDrawer({ onClose }) {
     load();
   }, []);
 
-  // Close on outside click
+  // Close on outside click — attached to the panel, not the backdrop
   useEffect(() => {
-    const onClick = (e) => {
-      if (drawerRef.current && !drawerRef.current.contains(e.target)) {
-        onClose();
-      }
+    const onMouseDown = (e) => {
+      // If the ref isn't attached yet, do nothing (avoid the "always close" bug)
+      if (!drawerRef.current) return;
+      // If the click was inside the panel, do nothing
+      if (drawerRef.current.contains(e.target)) return;
+      // Otherwise it was outside — close
+      onClose();
     };
-    const t = setTimeout(() => document.addEventListener('mousedown', onClick), 0);
+
+    const t = setTimeout(() => {
+      document.addEventListener('mousedown', onMouseDown);
+    }, 0);
+
     return () => {
       clearTimeout(t);
-      document.removeEventListener('mousedown', onClick);
+      document.removeEventListener('mousedown', onMouseDown);
     };
   }, [onClose]);
 
   const openConversation = (c) => {
-    // Fire the chat state first
+    // Prevent the outside-click handler from firing during this open flow
     openChat(c.user.id, c.user);
-    // Then close the drawer on the next tick, so both states apply cleanly
+    // Defer onClose so React finishes setting openChatUserId first
     setTimeout(() => onClose(), 0);
   };
 
   return (
-    <>
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.4)',
+        backdropFilter: 'blur(2px)',
+        zIndex: 1300,
+      }}
+    >
       <div
-        onClick={onClose}
+        ref={drawerRef}    /* ✅ ref on the panel itself */
+        onClick={(e) => e.stopPropagation()}   /* ✅ stop backdrop onClick from firing */
         style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0,0,0,0.4)',
-          backdropFilter: 'blur(2px)',
-          zIndex: 1300,
-        }}
-      />
-      <div
-        ref={drawerRef}
-        style={{
-          position: 'fixed',
+          position: 'absolute',
           top: '72px',
           right: '1rem',
           width: 'min(380px, calc(100vw - 2rem))',
@@ -89,7 +96,6 @@ export default function InboxDrawer({ onClose }) {
           border: '1px solid var(--border-primary)',
           borderRadius: '18px',
           boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-          zIndex: 1301,
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
@@ -111,7 +117,13 @@ export default function InboxDrawer({ onClose }) {
           </h3>
           <button
             onClick={onClose}
-            style={{ background: 'transparent', border: 'none', color: 'var(--text-tertiary)', fontSize: '1rem', cursor: 'pointer' }}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--text-tertiary)',
+              fontSize: '1rem',
+              cursor: 'pointer',
+            }}
           >
             ✕
           </button>
@@ -137,6 +149,7 @@ export default function InboxDrawer({ onClose }) {
             conversations.map((c) => (
               <button
                 key={c.user.id}
+                type="button"
                 onClick={() => openConversation(c)}
                 style={{
                   width: '100%',
@@ -150,9 +163,14 @@ export default function InboxDrawer({ onClose }) {
                   cursor: 'pointer',
                   textAlign: 'left',
                   transition: 'background 0.15s',
+                  fontFamily: 'inherit',
                 }}
-                onMouseEnter={(e) => { if (c.unreadCount === 0) e.currentTarget.style.background = 'var(--bg-secondary)'; }}
-                onMouseLeave={(e) => { if (c.unreadCount === 0) e.currentTarget.style.background = 'transparent'; }}
+                onMouseEnter={(e) => {
+                  if (c.unreadCount === 0) e.currentTarget.style.background = 'var(--bg-secondary)';
+                }}
+                onMouseLeave={(e) => {
+                  if (c.unreadCount === 0) e.currentTarget.style.background = 'transparent';
+                }}
               >
                 <div
                   style={{
@@ -178,14 +196,31 @@ export default function InboxDrawer({ onClose }) {
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5rem' }}>
-                    <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <span
+                      style={{
+                        fontWeight: 600,
+                        fontSize: '0.9rem',
+                        color: 'var(--text-primary)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
                       {c.user.firstName} {c.user.lastName}
                     </span>
                     <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', flexShrink: 0 }}>
                       {c.lastMessage ? timeAgo(c.lastMessage.createdAt) : ''}
                     </span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', marginTop: '0.1rem' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      marginTop: '0.1rem',
+                    }}
+                  >
                     <span
                       style={{
                         fontSize: '0.78rem',
@@ -197,8 +232,7 @@ export default function InboxDrawer({ onClose }) {
                       }}
                     >
                       {c.lastMessage?.isOwn ? 'You: ' : ''}
-                      {c.lastMessage?.body ||
-                        (c.lastMessage?.hasAttachment ? '📎 Attachment' : '')}
+                      {c.lastMessage?.body || (c.lastMessage?.hasAttachment ? '📎 Attachment' : '')}
                     </span>
                     {c.unreadCount > 0 && (
                       <span
@@ -229,6 +263,6 @@ export default function InboxDrawer({ onClose }) {
           to   { opacity: 1; transform: translateY(0); }
         }
       `}</style>
-    </>
+    </div>
   );
 }
