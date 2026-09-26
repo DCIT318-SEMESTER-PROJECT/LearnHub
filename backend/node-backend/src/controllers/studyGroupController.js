@@ -191,14 +191,12 @@ exports.sendMessage = async (req, res) => {
     const isMember = await StudyGroup.isMember(groupId, userId);
     if (!isMember) return res.status(403).json({ error: 'You must be a member to send messages' });
 
-    // Validate attachment shape if present
     let cleanAttachment = null;
     if (attachment) {
       const { data, type, name } = attachment;
       if (!data || !type || !name) {
         return res.status(400).json({ error: 'Attachment requires data, type and name' });
       }
-      // Cap at ~2.7MB base64 (~2MB original)
       if (data.length > 2.7 * 1024 * 1024) {
         return res.status(400).json({ error: 'Attachment is too large (max 2MB)' });
       }
@@ -219,7 +217,7 @@ exports.sendMessage = async (req, res) => {
 };
 
 // ═══════════════════════════════════════════════════════
-// MEMBER PREVIEWS — 4 avatars per group
+// MEMBER PREVIEWS
 // ═══════════════════════════════════════════════════════
 exports.getMemberPreviews = async (req, res) => {
   try {
@@ -264,13 +262,12 @@ exports.getMemberPreviews = async (req, res) => {
 };
 
 // ═══════════════════════════════════════════════════════
-// MEMBER PROFILE — public info
+// MEMBER PROFILE
 // ═══════════════════════════════════════════════════════
 exports.getMemberProfile = async (req, res) => {
   try {
     const { userId } = req.params;
 
-    // ✅ FIX: removed "headline" — not in your users table
     const user = await db.getAsync(
       `SELECT id, firstName, lastName, avatarUrl, bio, role, isInstructor,
               expertise, streakDays, createdAt
@@ -315,5 +312,71 @@ exports.getMemberProfile = async (req, res) => {
   } catch (error) {
     console.error('Error fetching member profile:', error);
     res.status(500).json({ error: 'Failed to fetch member profile' });
+  }
+};
+
+// ═══════════════════════════════════════════════════════
+// DIRECT CHAT — find or create a private 2-person group
+// ═══════════════════════════════════════════════════════
+exports.getOrCreateDirectChat = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const otherId = parseInt(req.params.userId);
+
+    if (!otherId || otherId === userId) {
+      return res.status(400).json({ error: 'Invalid user' });
+    }
+
+    const other = await db.getAsync(
+      'SELECT id, firstName, lastName FROM users WHERE id = ?',
+      [otherId]
+    );
+    if (!other) return res.status(404).json({ error: 'User not found' });
+
+    const existing = await db.getAsync(
+      `SELECT sg.id
+       FROM study_groups sg
+       WHERE sg.isActive = 1
+         AND (SELECT COUNT(*) FROM study_group_members WHERE studyGroupId = sg.id) = 2
+         AND EXISTS (SELECT 1 FROM study_group_members WHERE studyGroupId = sg.id AND userId = ?)
+         AND EXISTS (SELECT 1 FROM study_group_members WHERE studyGroupId = sg.id AND userId = ?)
+       LIMIT 1`,
+      [userId, otherId]
+    );
+
+    if (existing) {
+      const group = await StudyGroup.findById(existing.id);
+      return res.json({ group, created: false });
+    }
+
+    const me = await db.getAsync(
+      'SELECT id, firstName, lastName FROM users WHERE id = ?',
+      [userId]
+    );
+    const name = `💬 ${me.firstName} & ${other.firstName}`;
+    const description = 'Private conversation';
+
+    const groupId = await StudyGroup.create({
+      name,
+      description,
+      courseId: null,
+      createdBy: userId,
+      maxMembers: 2,
+      meetingSchedule: '',
+    });
+
+    await StudyGroup.joinGroup(groupId, userId);
+    await StudyGroup.joinGroup(groupId, otherId);
+
+    await db.runAsync(
+      'UPDATE study_group_members SET isAdmin = 1 WHERE studyGroupId = ? AND userId = ?',
+      [groupId, userId]
+    );
+
+    const group = await StudyGroup.findById(groupId);
+    res.status(201).json({ group, created: true });
+  } catch (error) {
+    console.error('Error creating direct chat:', error);
+    res.status(500).json({ error: 'Failed to open chat: ' + error.message });
   }
 };
