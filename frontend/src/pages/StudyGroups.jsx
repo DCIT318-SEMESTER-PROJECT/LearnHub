@@ -86,7 +86,6 @@ function StudyGroups() {
       setPendingAttachment(null);
       fetchMessages(target.id);
 
-      // Clean URL
       searchParams.delete('open');
       setSearchParams(searchParams, { replace: true });
     }
@@ -234,12 +233,12 @@ function StudyGroups() {
       );
       toast.info('Left group');
       fetchData();
+      if (detailGroupId === groupId) setDetailGroupId(null);
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to leave group');
     }
   };
 
-  // ✅ openChat now always closes other modals first, and works from anywhere
   const openChat = async (group) => {
     setDetailGroupId(null);
     setProfileUserId(null);
@@ -579,18 +578,17 @@ function StudyGroups() {
         </div>
       )}
 
-      {/* Group Detail Modal */}
+      {/* Group Detail Modal — no onChat, no Open Chat button */}
       <GroupDetailModal
         groupId={detailGroupId}
         onClose={() => setDetailGroupId(null)}
         onViewMember={(uid) => setProfileUserId(uid)}
-        onChat={(group) => openChat(group)}
         onJoin={(id) => handleJoin(id)}
         onLeave={(id) => handleLeave(id)}
         onDelete={(id) => setConfirmDeleteId(id)}
       />
 
-      {/* Chat panel — zIndex 1700 so it always sits on top */}
+      {/* Chat panel */}
       {selectedGroup && (
         <div
           style={{
