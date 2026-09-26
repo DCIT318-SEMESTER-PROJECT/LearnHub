@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   getStudyGroups,
   joinStudyGroup,
@@ -34,6 +34,7 @@ function StudyGroups() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const toast = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [groups, setGroups] = useState([]);
   const [memberPreviews, setMemberPreviews] = useState({});
@@ -57,8 +58,6 @@ function StudyGroups() {
 
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [profileUserId, setProfileUserId] = useState(null);
-
-  // ✅ NEW — group detail modal
   const [detailGroupId, setDetailGroupId] = useState(null);
 
   const [formData, setFormData] = useState({
@@ -72,6 +71,26 @@ function StudyGroups() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  // ✅ Auto-open chat from ?open=<groupId>
+  useEffect(() => {
+    const openId = searchParams.get('open');
+    if (!openId || groups.length === 0) return;
+
+    const target = groups.find((g) => g.id === parseInt(openId));
+    if (target) {
+      setDetailGroupId(null);
+      setProfileUserId(null);
+      setSelectedGroup(target);
+      setChatMessages([]);
+      setPendingAttachment(null);
+      fetchMessages(target.id);
+
+      // Clean URL
+      searchParams.delete('open');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [groups, searchParams]);
 
   useEffect(() => {
     if (messagesEndRef.current) {
@@ -220,8 +239,10 @@ function StudyGroups() {
     }
   };
 
+  // ✅ openChat now always closes other modals first, and works from anywhere
   const openChat = async (group) => {
-    setDetailGroupId(null); // close detail modal if open
+    setDetailGroupId(null);
+    setProfileUserId(null);
     setSelectedGroup(group);
     setChatMessages([]);
     setPendingAttachment(null);
@@ -416,18 +437,10 @@ function StudyGroups() {
             </div>
             <div>
               <Label>Course *</Label>
-              <select
-                name="courseId"
-                value={formData.courseId}
-                onChange={handleInput}
-                required
-                style={selectStyle}
-              >
+              <select name="courseId" value={formData.courseId} onChange={handleInput} required style={selectStyle}>
                 <option value="">Select a course…</option>
                 {courses.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.title}
-                  </option>
+                  <option key={c.id} value={c.id}>{c.title}</option>
                 ))}
               </select>
             </div>
@@ -445,25 +458,11 @@ function StudyGroups() {
             </div>
             <div>
               <Label>Max Members</Label>
-              <input
-                type="number"
-                name="maxMembers"
-                value={formData.maxMembers}
-                onChange={handleInput}
-                min={2}
-                max={50}
-                style={inputStyle}
-              />
+              <input type="number" name="maxMembers" value={formData.maxMembers} onChange={handleInput} min={2} max={50} style={inputStyle} />
             </div>
             <div>
               <Label>Meeting Schedule</Label>
-              <input
-                name="meetingSchedule"
-                value={formData.meetingSchedule}
-                onChange={handleInput}
-                placeholder="e.g. Tuesdays 7 PM"
-                style={inputStyle}
-              />
+              <input name="meetingSchedule" value={formData.meetingSchedule} onChange={handleInput} placeholder="e.g. Tuesdays 7 PM" style={inputStyle} />
             </div>
           </div>
 
@@ -504,14 +503,7 @@ function StudyGroups() {
       )}
 
       {/* Toolbar */}
-      <div
-        style={{
-          display: 'flex',
-          gap: '0.75rem',
-          flexWrap: 'wrap',
-          marginBottom: '1.25rem',
-        }}
-      >
+      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
         <div style={{ display: 'flex', gap: '0.25rem', padding: '0.3rem', background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', borderRadius: '12px', flexWrap: 'wrap' }}>
           {[
             { id: 'all', label: 'All' },
@@ -533,7 +525,6 @@ function StudyGroups() {
                   fontSize: '0.85rem',
                   cursor: 'pointer',
                   boxShadow: active ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
-                  transition: 'all 0.15s',
                 }}
               >
                 {t.label} ({tabCounts[t.id]})
@@ -599,7 +590,7 @@ function StudyGroups() {
         onDelete={(id) => setConfirmDeleteId(id)}
       />
 
-      {/* Chat modal */}
+      {/* Chat panel — zIndex 1700 so it always sits on top */}
       {selectedGroup && (
         <div
           style={{
@@ -634,7 +625,7 @@ function StudyGroups() {
                 {selectedGroup.name}
               </div>
               <div style={{ fontSize: '0.72rem', opacity: 0.9, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {selectedGroup.members || 0} members · {selectedGroup.courseTitle || 'Course'}
+                {selectedGroup.members || 0} members · {selectedGroup.courseTitle || 'Private'}
               </div>
             </div>
             <button
@@ -795,27 +786,14 @@ function StudyGroups() {
                 }}
               >
                 {pendingAttachment.type.startsWith('image/') ? (
-                  <img
-                    src={pendingAttachment.data}
-                    alt=""
-                    style={{ width: '36px', height: '36px', borderRadius: '6px', objectFit: 'cover' }}
-                  />
+                  <img src={pendingAttachment.data} alt="" style={{ width: '36px', height: '36px', borderRadius: '6px', objectFit: 'cover' }} />
                 ) : (
                   <span style={{ fontSize: '1.3rem' }}>
                     {pendingAttachment.type === 'application/pdf' ? '📄' : '📝'}
                   </span>
                 )}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      fontSize: '0.82rem',
-                      fontWeight: 600,
-                      color: 'var(--text-primary)',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}
-                  >
+                  <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {pendingAttachment.name}
                   </div>
                   <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>
@@ -825,14 +803,7 @@ function StudyGroups() {
                 <button
                   type="button"
                   onClick={() => setPendingAttachment(null)}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--error)',
-                    fontSize: '1rem',
-                    cursor: 'pointer',
-                    padding: '0.2rem 0.4rem',
-                  }}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--error)', fontSize: '1rem', cursor: 'pointer', padding: '0.2rem 0.4rem' }}
                   title="Remove attachment"
                 >
                   ✕
@@ -916,7 +887,6 @@ function StudyGroups() {
         </div>
       )}
 
-      {/* Confirm delete */}
       <ConfirmDialog
         isOpen={!!confirmDeleteId}
         title="Delete this study group?"
@@ -927,7 +897,6 @@ function StudyGroups() {
         onCancel={() => setConfirmDeleteId(null)}
       />
 
-      {/* Member profile modal */}
       {profileUserId && (
         <MemberProfileModal
           userId={profileUserId}
@@ -1012,15 +981,7 @@ function GroupCard({ group, members = [], onJoin, onLeave, onOpen, onDelete, onV
         {group.name}
       </h3>
 
-      <p
-        style={{
-          margin: '0 0 0.75rem',
-          color: 'var(--text-secondary)',
-          fontSize: '0.9rem',
-          lineHeight: 1.5,
-          flex: 1,
-        }}
-      >
+      <p style={{ margin: '0 0 0.75rem', color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.5, flex: 1 }}>
         {group.description}
       </p>
 
@@ -1060,10 +1021,7 @@ function GroupCard({ group, members = [], onJoin, onLeave, onOpen, onDelete, onV
                   overflow: 'hidden',
                   padding: 0,
                   flexShrink: 0,
-                  transition: 'transform 0.15s',
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.12) translateY(-2px)')}
-                onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
               >
                 {isImageUrl(m.avatarUrl) ? (
                   <img src={m.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -1074,7 +1032,6 @@ function GroupCard({ group, members = [], onJoin, onLeave, onOpen, onDelete, onV
             ))}
           </div>
 
-          {/* ✅ Clickable "+N more" — opens group detail */}
           <button
             onClick={(e) => { e.stopPropagation(); onOpenDetail(); }}
             style={{
@@ -1087,8 +1044,6 @@ function GroupCard({ group, members = [], onJoin, onLeave, onOpen, onDelete, onV
               fontWeight: 600,
               fontFamily: 'inherit',
               textDecoration: 'underline',
-              textDecorationColor: 'rgba(108,92,231,0.4)',
-              textUnderlineOffset: '2px',
             }}
           >
             {group.members || members.length}

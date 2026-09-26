@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { getMemberProfile } from '../../api/studyGroupsAPI';
-import { useMessages } from '../../context/MessagesContext';
+import { useNavigate } from 'react-router-dom';
+import { getMemberProfile, openDirectChat } from '../../api/studyGroupsAPI';
 import { useAuth } from '../../context/AuthContext';
 
 const isImageUrl = (v) =>
@@ -12,7 +12,7 @@ const initials = (first = '', last = '') =>
 
 function MemberProfileModal({ userId, onClose }) {
   const { user: currentUser } = useAuth();
-  const { openChat } = useMessages();
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -43,15 +43,19 @@ function MemberProfileModal({ userId, onClose }) {
 
   const isSelf = currentUser && data?.user && currentUser.id === data.user.id;
 
-  const handleMessage = () => {
+  const handleMessage = async () => {
     if (!data?.user) return;
-    openChat(data.user.id, {
-      firstName: data.user.firstName,
-      lastName: data.user.lastName,
-      avatarUrl: data.user.avatarUrl,
-      isInstructor: !!data.user.isInstructor,
-    });
-    onClose();
+    try {
+      const { data: res } = await openDirectChat(data.user.id);
+      const groupId = res.group?.id;
+      onClose();
+      if (groupId) {
+        navigate(`/study-groups?open=${groupId}`);
+      }
+    } catch (err) {
+      console.error('Failed to open chat:', err);
+      alert(err.response?.data?.error || 'Could not open chat');
+    }
   };
 
   return (
@@ -85,7 +89,7 @@ function MemberProfileModal({ userId, onClose }) {
           animation: 'profilePop 0.2s ease-out',
         }}
       >
-        {/* ═══════ HEADER BAND + AVATAR (avatar now nested inside) ═══════ */}
+        {/* Header band + avatar */}
         <div
           style={{
             position: 'relative',
@@ -94,31 +98,9 @@ function MemberProfileModal({ userId, onClose }) {
             flexShrink: 0,
           }}
         >
-          {/* Decorative circles (kept inside header band) */}
-          <div
-            style={{
-              position: 'absolute',
-              top: '-40px',
-              right: '-30px',
-              width: '140px',
-              height: '140px',
-              borderRadius: '50%',
-              background: 'rgba(255,255,255,0.10)',
-            }}
-          />
-          <div
-            style={{
-              position: 'absolute',
-              bottom: '-60px',
-              left: '20%',
-              width: '110px',
-              height: '110px',
-              borderRadius: '50%',
-              background: 'rgba(255,255,255,0.07)',
-            }}
-          />
+          <div style={{ position: 'absolute', top: '-40px', right: '-30px', width: '140px', height: '140px', borderRadius: '50%', background: 'rgba(255,255,255,0.10)' }} />
+          <div style={{ position: 'absolute', bottom: '-60px', left: '20%', width: '110px', height: '110px', borderRadius: '50%', background: 'rgba(255,255,255,0.07)' }} />
 
-          {/* Close button */}
           <button
             onClick={onClose}
             aria-label="Close profile"
@@ -145,7 +127,6 @@ function MemberProfileModal({ userId, onClose }) {
             ✕
           </button>
 
-          {/* ✅ Avatar — inside the header band, half in, half out */}
           {data?.user && (
             <div
               style={{
@@ -181,7 +162,7 @@ function MemberProfileModal({ userId, onClose }) {
           )}
         </div>
 
-        {/* ═══════ BODY ═══════ */}
+        {/* Body */}
         <div
           style={{
             padding: '4rem 1.75rem 1.75rem',
@@ -253,7 +234,7 @@ function MemberProfileModal({ userId, onClose }) {
                 )}
               </div>
 
-              {/* Message button (hidden on own profile) */}
+              {/* Message button */}
               {!isSelf && (
                 <button
                   onClick={handleMessage}
@@ -458,7 +439,6 @@ function MemberProfileModal({ userId, onClose }) {
   );
 }
 
-/* ─── Small helpers ──────────────────────────────── */
 function Section({ title, children, isLast = false }) {
   return (
     <div style={{ marginBottom: isLast ? 0 : '1.35rem' }}>

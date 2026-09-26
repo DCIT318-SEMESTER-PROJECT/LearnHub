@@ -40,3 +40,7 @@ export const getMemberPreviews = (groupIds) =>
 
 export const getMemberProfile = (userId) =>
   api.get(`/study-groups/members/${userId}/profile`);
+
+// ─── Direct chat (private 2-person group) ───────────────
+export const openDirectChat = (userId) =>
+  api.post(`/study-groups/direct/${userId}`);
