@@ -9,7 +9,10 @@ class StudyGroup {
               c.difficultyLevel as courseLevel,
               u.firstName as creatorFirstName,
               u.lastName  as creatorLastName,
-              (SELECT COUNT(*) FROM study_group_members WHERE studyGroupId = sg.id) as members
+              (SELECT COUNT(*)
+               FROM study_group_members sgm
+               JOIN users u2 ON sgm.userId = u2.id
+               WHERE sgm.studyGroupId = sg.id) as members
        FROM study_groups sg
        LEFT JOIN courses c ON sg.courseId = c.id
        LEFT JOIN users u ON sg.createdBy = u.id
@@ -27,7 +30,10 @@ class StudyGroup {
               c.difficultyLevel as courseLevel,
               u.firstName as creatorFirstName,
               u.lastName  as creatorLastName,
-              (SELECT COUNT(*) FROM study_group_members WHERE studyGroupId = sg.id) as members
+              (SELECT COUNT(*)
+               FROM study_group_members sgm
+               JOIN users u2 ON sgm.userId = u2.id
+               WHERE sgm.studyGroupId = sg.id) as members
        FROM study_groups sg
        LEFT JOIN courses c ON sg.courseId = c.id
        LEFT JOIN users u ON sg.createdBy = u.id
@@ -39,7 +45,10 @@ class StudyGroup {
   static async findByCourse(courseId) {
     return await db.allAsync(
       `SELECT sg.*,
-              (SELECT COUNT(*) FROM study_group_members WHERE studyGroupId = sg.id) as members
+              (SELECT COUNT(*)
+               FROM study_group_members sgm
+               JOIN users u2 ON sgm.userId = u2.id
+               WHERE sgm.studyGroupId = sg.id) as members
        FROM study_groups sg
        WHERE sg.courseId = ? AND sg.isActive = 1
        ORDER BY sg.createdAt DESC`,
@@ -52,7 +61,10 @@ class StudyGroup {
       `SELECT sg.*,
               c.title as courseTitle,
               c.imageUrl as courseImageUrl,
-              (SELECT COUNT(*) FROM study_group_members WHERE studyGroupId = sg.id) as members,
+              (SELECT COUNT(*)
+               FROM study_group_members sgm2
+               JOIN users u2 ON sgm2.userId = u2.id
+               WHERE sgm2.studyGroupId = sg.id) as members,
               sgm.isAdmin
        FROM study_groups sg
        JOIN study_group_members sgm ON sgm.studyGroupId = sg.id
