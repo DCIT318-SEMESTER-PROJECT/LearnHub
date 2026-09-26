@@ -16,7 +16,7 @@ const formatJoined = (iso) => {
   return d.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
 };
 
-function GroupDetailModal({ groupId, onClose, onViewMember, onChat, onJoin, onLeave, onDelete }) {
+function GroupDetailModal({ groupId, onClose, onViewMember, onJoin, onLeave, onDelete }) {
   const [group, setGroup] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -26,6 +26,7 @@ function GroupDetailModal({ groupId, onClose, onViewMember, onChat, onJoin, onLe
     let cancelled = false;
     setLoading(true);
     setError('');
+    setGroup(null);
     getStudyGroupById(groupId)
       .then((res) => { if (!cancelled) setGroup(res.data); })
       .catch((err) => { if (!cancelled) setError(err.response?.data?.error || 'Failed to load group'); })
@@ -46,7 +47,7 @@ function GroupDetailModal({ groupId, onClose, onViewMember, onChat, onJoin, onLe
   if (!groupId) return null;
 
   const members = group?.members || [];
-  const memberCount = group?.memberCount || members.length;
+  const memberCount = members.length;
   const isJoined = group?.isMember || group?.isJoined;
   const isAdmin = group?.isAdmin;
 
@@ -282,7 +283,7 @@ function GroupDetailModal({ groupId, onClose, onViewMember, onChat, onJoin, onLe
           )}
         </div>
 
-        {/* ═══════ FOOTER ACTIONS ═══════ */}
+        {/* ═══════ FOOTER — no Open Chat button ═══════ */}
         <div
           style={{
             padding: '0.9rem 1.75rem',
@@ -294,24 +295,6 @@ function GroupDetailModal({ groupId, onClose, onViewMember, onChat, onJoin, onLe
             justifyContent: 'flex-end',
           }}
         >
-          {isJoined && (
-            <button
-              onClick={() => onChat?.(group)}
-              style={{
-                padding: '0.6rem 1.25rem',
-                background: '#6c5ce7',
-                color: 'white',
-                border: 'none',
-                borderRadius: '10px',
-                cursor: 'pointer',
-                fontWeight: 600,
-                fontSize: '0.88rem',
-              }}
-            >
-              💬 Open Chat
-            </button>
-          )}
-
           {isJoined ? (
             <button
               onClick={() => onLeave?.(group.id)}
