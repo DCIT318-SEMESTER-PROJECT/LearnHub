@@ -2,11 +2,13 @@ const db = require('../config/database');
 
 // ═══════════════════════════════════════════════════════
 // GET /api/messages/conversations
+// Returns one row per conversation partner, with last message + unread count
 // ═══════════════════════════════════════════════════════
 exports.getConversations = async (req, res) => {
   try {
     const userId = req.userId;
 
+    // Find everyone the user has exchanged messages with (either direction)
     const rows = await db.allAsync(
       `SELECT
          CASE
@@ -47,53 +49,8 @@ exports.getConversations = async (req, res) => {
         [other.id, userId]
       );
 
-      // Find the 2-person study group between these two users
-      const chatGroup = await db.getAsync(
-        `SELECT sg.id
-         FROM study_groups sg
-         WHERE sg.isActive = 1
-           AND (SELECT COUNT(*) FROM study_group_members WHERE studyGroupId = sg.id) = 2
-           AND EXISTS (SELECT 1 FROM study_group_members WHERE studyGroupId = sg.id AND userId = ?)
-           AND EXISTS (SELECT 1 FROM study_group_members WHERE studyGroupId = sg.id AND userId = ?)
-         LIMIT 1`,
-        [userId, other.id]
-      );
-
-      // Auto-create if missing
-      let groupId = chatGroup?.id;
-      if (!groupId) {
-        try {
-          const me = await db.getAsync(
-            'SELECT id, firstName, lastName FROM users WHERE id = ?',
-            [userId]
-          );
-          const name = `💬 ${me.firstName} & ${other.firstName}`;
-          const result = await db.runAsync(
-            `INSERT INTO study_groups (name, description, courseId, createdBy, maxMembers, meetingSchedule)
-             VALUES (?, ?, ?, ?, ?, ?)`,
-            [name, 'Private conversation', null, userId, 2, '']
-          );
-          groupId = result.lastID;
-          await db.runAsync(
-            'INSERT INTO study_group_members (studyGroupId, userId) VALUES (?, ?)',
-            [groupId, userId]
-          );
-          await db.runAsync(
-            'INSERT INTO study_group_members (studyGroupId, userId) VALUES (?, ?)',
-            [groupId, other.id]
-          );
-          await db.runAsync(
-            'UPDATE study_group_members SET isAdmin = 1 WHERE studyGroupId = ? AND userId = ?',
-            [groupId, userId]
-          );
-        } catch (e) {
-          console.error('Failed to create chat group for conversation:', e);
-        }
-      }
-
       conversations.push({
         user: other,
-        groupId,
         lastMessage: lastMsg
           ? {
               body: lastMsg.body,
@@ -108,6 +65,8 @@ exports.getConversations = async (req, res) => {
       });
     }
 
+    // Also include users the current user has started a thread with but not yet exchanged a message with? No — keep it simple.
+
     res.json({ conversations });
   } catch (error) {
     console.error('Error fetching conversations:', error);
@@ -117,6 +76,7 @@ exports.getConversations = async (req, res) => {
 
 // ═══════════════════════════════════════════════════════
 // GET /api/messages/:userId
+// Full message thread with a specific user. Marks their messages as read.
 // ═══════════════════════════════════════════════════════
 exports.getThread = async (req, res) => {
   try {
@@ -146,6 +106,7 @@ exports.getThread = async (req, res) => {
       [userId, otherId, otherId, userId]
     );
 
+    // Mark their unread messages to me as read
     await db.runAsync(
       `UPDATE direct_messages
        SET isRead = 1
@@ -162,6 +123,7 @@ exports.getThread = async (req, res) => {
 
 // ═══════════════════════════════════════════════════════
 // POST /api/messages/:userId
+// Send a message to another user.
 // ═══════════════════════════════════════════════════════
 exports.sendMessage = async (req, res) => {
   try {
@@ -223,6 +185,7 @@ exports.sendMessage = async (req, res) => {
 
 // ═══════════════════════════════════════════════════════
 // GET /api/messages/unread/count
+// Total unread count — powers the navbar badge.
 // ═══════════════════════════════════════════════════════
 exports.getUnreadCount = async (req, res) => {
   try {
@@ -241,6 +204,7 @@ exports.getUnreadCount = async (req, res) => {
 
 // ═══════════════════════════════════════════════════════
 // DELETE /api/messages/:userId
+// Optional — clears the whole thread with a user (both directions).
 // ═══════════════════════════════════════════════════════
 exports.clearThread = async (req, res) => {
   try {
